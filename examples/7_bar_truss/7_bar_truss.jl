@@ -35,7 +35,7 @@ function obj(X)
     return 2*sum(FL[1:3]) + FL[4]
 end
 
-xstar = copy(x0)
+xstar = [1.0,-1.5]
 shift = 1.0
 power = 2.0
 function deflation_constr(X)
@@ -47,15 +47,19 @@ model = Model(obj)
 addvar!(model, [0.0, -3.0, -1e3], [h_span, 3.0, 1e3])
 add_ineq_constraint!(model, deflation_constr)
 
-alg = NLoptAlg(:LD_MMA)
-options = NLoptOptions()
+alg = IpoptAlg()
+options = IpoptOptions(tol = 1e-4)
 r = optimize(model, alg, vcat(x0, 1.0), options = options)
-
-# alg = IpoptAlg()
-# options = IpoptOptions(tol = 1e-4)
-# r = optimize(model, alg, vcat(x0, 1.0), options = options)
-
 println(r.minimizer, r.minimum)
+
+###########################
+
+# alg = NLoptAlg(:LD_MMA)
+# options = NLoptOptions()
+# r = optimize(model, alg, vcat(x0, 1.0), options = options)
+# println(r.minimizer, r.minimum)
+
+###########################
 
 # options = DeflatedOptions(
 #     ndeflations = 10, sub_options = IpoptOptions(tol = 1e-4), radius = 2.0,
