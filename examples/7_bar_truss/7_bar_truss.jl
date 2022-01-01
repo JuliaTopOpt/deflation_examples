@@ -16,7 +16,7 @@ h_span = 2.0
 #   X--------X'
 # O = (0,0), X = (x,y) the variables
 # norm(O,S) = 2*h_span
-# P is a verticle point load applied at C
+# P is a vertical point load applied at C
 # X' node is mirrored
 
 x0 = [1.0, -1.0]
@@ -35,22 +35,29 @@ function obj(X)
     return 2*sum(FL[1:3]) + FL[4]
 end
 
-xstar = [1.0,-1.5]
+xstar = [1.0, -1.5]
 shift = 1.0
 power = 2.0
 function deflation_constr(X)
-    return 1.0/norm(X[1:2]-xstar, power) + shift - X[3]
+    return 1.0/norm(X[1:2]-xstar, power)^power + shift - X[3]
 end
 
 model = Model(obj)
 # X = (x1,y1,y), where y is the deflation auxilary variable
-addvar!(model, [0.0, -3.0, -1e3], [h_span, 3.0, 1e3])
-add_ineq_constraint!(model, deflation_constr)
+addvar!(model, [0.0, -3.0], [h_span, 3.0])
+# add_ineq_constraint!(model, deflation_constr)
 
 alg = IpoptAlg()
 options = IpoptOptions(tol = 1e-4)
-r = optimize(model, alg, vcat(x0, 1.0), options = options)
-println(r.minimizer, r.minimum)
+r1 = optimize(model, alg, x0, options = options)
+@show(r1.minimizer, r1.minimum)
+
+xstar = r1.minimizer
+addvar!(model, [-1e3], [1e6])
+add_ineq_constraint!(model, deflation_constr)
+r2 = optimize(model, alg, vcat(x0, 1.0), options = options)
+@show(r2.minimizer, r2.minimum)
+
 
 ###########################
 
