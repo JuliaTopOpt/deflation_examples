@@ -58,7 +58,6 @@ add_ineq_constraint!(model, deflation_constr)
 r2 = optimize(model, alg, vcat(x0, 1.0), options = options)
 @show(r2.minimizer, r2.minimum)
 
-
 ###########################
 
 # alg = NLoptAlg(:LD_MMA)
