@@ -1,8 +1,8 @@
 using LinearAlgebra, StatsFuns, Nonconvex
 using LinearAlgebra: norm
 Nonconvex.@load Ipopt
-Nonconvex.@load NLopt
-Nonconvex.@load Multistart
+# Nonconvex.@load NLopt
+# Nonconvex.@load Multistart
 
 # Point load in the middle, kN
 P = -100.0
