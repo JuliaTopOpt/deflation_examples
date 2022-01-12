@@ -4,20 +4,28 @@ Please use the package environment by `julia --project=.` and `]instantiate`
 
 ## Truss TopOpt examples
 
-You can either directly run from the command line: 
-```bash
-$ julia --project=. examples/truss_to/run.jl --opt compliance_deflation -v
+```julia
+using Runner
+@runit "examples/truss_to/run.jl --problem dense_graph --task min_compliance_vol_constrained_deflation --optimizer mma"
 ```
 
-Or using a running Julia session (recommended): 
+## Continuum TopOpt examples
+
 ```julia
-julia> using Runner; @runit "examples/truss_to/run.jl -v --opt compliance_deflation"
+using Runner
+@runit "examples\\cont_to\\run.jl --task min_vol_stress_constrained_deflation --optimizer percival"
+```
+
+Other cases:
+
+```julia
+@runit "examples\\cont_to\\run.jl --task min_compliance_vol_constrained --optimizer mma"
+@runit "examples\\cont_to\\run.jl --task min_vol_compliance_constrained --optimizer mma"
 ```
 
 ## TODO
 - stress-constrained continuum
 
 - vol-constrained compliance-min truss
-- compliance-constrained vol-min truss
 - buckling constrained truss
 - mixed_integer truss

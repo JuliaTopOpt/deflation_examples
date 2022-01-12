@@ -7,3 +7,4 @@ deps/deps.jl
 
 .vscode
 Manifest.toml
+# *.pdf
