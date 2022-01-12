@@ -89,7 +89,7 @@ end
 
 rng = StableRNG(123)
 Random.seed!(rng, 123)
-means = 30 * randn(rng, 20)
+means = 20 * randn(rng, 20)
 initθ = [0.0, 5.0, 6.0]
 nsolves = 10
 power = 3.0
