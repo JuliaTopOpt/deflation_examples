@@ -6,7 +6,7 @@ using NearestNeighbors
 using TopOpt.TopOptProblems: StiffnessTopOptProblem, Metadata, RectilinearGrid, 
     left, right, middley, middlez, find_black_and_white, find_varind
 using TopOpt.TrussTopOptProblems
-using TopOpt.TrussTopOptProblems: RectilinearGrid, TrussProblem, get_fixities_node_set_name
+using TopOpt.TrussTopOptProblems: TrussProblem, get_fixities_node_set_name
 
 export CustomPointLoadCantileverTruss
 

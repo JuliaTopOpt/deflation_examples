@@ -13,3 +13,11 @@ Or using a running Julia session (recommended):
 ```julia
 julia> using Runner; @runit "examples/truss_to/run.jl -v --opt compliance_deflation"
 ```
+
+## TODO
+- stress-constrained continuum
+
+- vol-constrained compliance-min truss
+- compliance-constrained vol-min truss
+- buckling constrained truss
+- mixed_integer truss
