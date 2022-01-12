@@ -106,7 +106,7 @@ end
 rng = StableRNG(123)
 Random.seed!(rng, 123)
 means = 30 * randn(rng, 20)
-initθ = [0.0, 10.0, 6.0]
+initθ = [0.0, 5.0, 6.0]
 nsolves = 10
 power = 3.0
 vals1 = run_exp(means, initθ, rng; nsolves, power)
