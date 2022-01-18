@@ -24,8 +24,8 @@ Other cases:
 ```
 
 ## TODO
-- stress-constrained continuum
 
-- vol-constrained compliance-min truss
-- buckling constrained truss
-- mixed_integer truss
+- [ ] stress-constrained continuum
+- [ ] vol-constrained compliance-min truss
+- [ ] buckling constrained truss
+- [ ] mixed_integer truss

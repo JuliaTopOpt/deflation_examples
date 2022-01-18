@@ -119,7 +119,7 @@ function optimize_domain(problem_name, opt_task; verbose=false, write=false, opt
         xstar = r1.minimizer
         shift = 1.0
         power = 4.0
-        radius = 0.0
+        radius = 2.0
         function deflation_constr(X)
             # L-2 distance
             # return 1.0/norm(X[1:end-1]-xstar, 2)^power + shift - X[end]
