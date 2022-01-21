@@ -7,6 +7,7 @@ using JLD
 import Optim
 using TopOpt
 using TopOpt.TrussTopOptProblems.TrussVisualization: visualize
+using Arpack
 Nonconvex.@load Ipopt
 Nonconvex.@load NLopt
 Nonconvex.@load Juniper
@@ -31,8 +32,8 @@ function optimize_truss(problem, opt_task; verbose=false, write=false, optimizer
     end
 
     if problem == "dense_graph"
-        force = [0, 100.0]
-        problem = CustomPointLoadCantileverTruss((40*size_ratio,10*size_ratio),Tuple(ones(2)),1.0,0.3,force)
+        force = [-1.0, 0]
+        problem = CustomPointLoadCantileverTruss((40*size_ratio,10*size_ratio),Tuple(ones(2)),10.0,0.3,force)
     elseif problem == "tim"
         node_points, elements, mats, crosssecs, fixities, load_cases = load_truss_json(
             joinpath(@__DIR__, "tim_2d.json")
@@ -53,8 +54,46 @@ function optimize_truss(problem, opt_task; verbose=false, write=false, optimizer
     solver = FEASolver(Direct, problem; xmin=xmin, penalty=penalty)
     solver()
     # TopOpt.setpenalty!(solver, penalty.p)
+    ch = problem.ch
+    dh = problem.ch.dh
 
     comp = TopOpt.Compliance(problem, solver)
+
+    dp = TopOpt.Displacement(solver)
+    assemble_k = TopOpt.AssembleK(problem)
+    element_k = ElementK(solver)
+    truss_element_kσ = TrussElementKσ(problem, solver)
+
+    # * comliance minimization objective
+    obj = comp
+    c = 1.0 # buckling load multiplier
+    ndofs = length(solver.u)
+    inds = setdiff(1:ndofs, ch.prescribed_dofs)
+
+    function buckling_matrix_constr(x)
+        # * Array(K + c*Kσ) ⋟ 0, PSD
+        # * solve for the displacement
+        u = dp(x)
+
+        # * x -> Kes, construct all the element stiffness matrices
+        # a list of small matrices for each element (cell)
+        Kes = element_k(x)
+
+        # * Kes -> K (global linear stiffness matrix)
+        K = assemble_k(Kes)
+        K = apply_boundary_with_meandiag!(K, ch)
+
+        # * u_e, x_e -> Ksigma_e
+        Kσs = truss_element_kσ(u, x)
+
+        # * Kσs -> Kσ
+        Kσ = assemble_k(Kσs)
+        Kσ = apply_boundary_with_zerodiag!(Kσ, ch)
+
+        Kg = Array(K + c * Kσ)
+
+        return Kg[inds, inds]
+    end
 
     if occursin("vol_constrained", opt_task) && occursin("min_compliance", opt_task)
         obj = comp
@@ -62,16 +101,19 @@ function optimize_truss(problem, opt_task; verbose=false, write=false, optimizer
         constr = x -> volfrac(x) - V
         # constr = x -> sum(x) / length(x) - V
 
-        if occursin("buckling_constrained", opt_task)
-            
-        end
     else
         error("Undefined task $(opt_task)")
     end
 
-    x0 = fill(V, length(solver.vars))
+    x0 = fill(1.0, length(solver.vars))
     nelem = length(x0)
     println("#elements : $nelem")
+
+    # println(logdet(cholesky(buckling_matrix_constr(x0))))
+    Kg0 = buckling_matrix_constr(x0)
+    sparse_eigvals, buckmodes = eigs(Kg0, nev=1, which=:SR)
+    smallest_pos_eigval = sparse_eigvals[1]
+    println(smallest_pos_eigval)
 
     Nonconvex.NonconvexCore.show_residuals[] = verbose
 
@@ -82,6 +124,8 @@ function optimize_truss(problem, opt_task; verbose=false, write=false, optimizer
         addvar!(m, zeros(nelem), ones(nelem))
     end
     add_ineq_constraint!(m, constr)
+
+    sd_constr = Nonconvex.add_sd_constraint!(m, buckling_matrix_constr)
 
     if optimizer == "mma"
         alg = MMA02()
@@ -99,6 +143,9 @@ function optimize_truss(problem, opt_task; verbose=false, write=false, optimizer
     elseif optimizer == "ipopt"
         alg = IpoptAlg()
         options = IpoptOptions(tol = 1e-4, max_iter=1000)
+    elseif optimizer == "sdp"
+        alg = SDPBarrierAlg(; sub_alg=IpoptAlg())
+        options = SDPBarrierOptions(; sub_options=IpoptOptions(; max_iter=200))
     else
         error("Undefined optimizer $optimizer")
     end
@@ -127,6 +174,9 @@ function optimize_truss(problem, opt_task; verbose=false, write=false, optimizer
         # display(var_fig)
         # wait_for_key("Check variable distribution...")
     end
+
+    # println(logdet(cholesky(buckling_matrix_constr(x0))))
+    Kg = buckling_matrix_constr(r1.minimizer)
 
     if endswith(opt_task, "deflation")
         shift = 1.0
