@@ -108,6 +108,7 @@ function optimize_truss(problem, opt_task; verbose=false, write=false, optimizer
     x0 = fill(1.0, length(solver.vars))
     nelem = length(x0)
     println("#elements : $nelem")
+    result_data["initial_obj"] = obj(x0)
 
     # println(logdet(cholesky(buckling_matrix_constr(x0))))
     Kg0 = buckling_matrix_constr(x0)
@@ -237,6 +238,7 @@ function optimize_truss(problem, opt_task; verbose=false, write=false, optimizer
             fig2 = visualize(problem, topology=df_result.minimizer[1:end-1])
             hidedecorations!(fig2.current_axis.x)
             # var_fig = lines(df_result.minimizer[1:end-1])
+
             if write
                 result_data["deflate_$(iter)"] = Dict("minimizer" => df_result.minimizer, "minimum" => df_result.minimum) #, "convstate" => r1.convstate)
                 save(joinpath(problem_result_dir, "deflate_r$(iter).png"), fig2)
@@ -253,7 +255,12 @@ function optimize_truss(problem, opt_task; verbose=false, write=false, optimizer
         end
 
         if write
-            obj_fig = lines(objs)
+            obj_fig = Figure(resolution=(800,800), font="Arial")
+            ax = Axis(obj_fig[1,1])
+            ax.xlabel = "deflation iterations"
+            ax.ylabel = "objectives"
+            lines!(ax, 0:1:length(objs)-1, objs)
+            save(joinpath(problem_result_dir, "_obj_history.pdf"), obj_fig)
             save(joinpath(problem_result_dir, "_obj_history.png"), obj_fig)
         end
     end

@@ -1,30 +1,36 @@
-using GLMakie
-GLMakie.activate!()
-# using CairoMakie
-# CairoMakie.activate!()
+# using GLMakie
+# GLMakie.activate!()
+using CairoMakie
+CairoMakie.activate!()
 using Makie
 using JLD
+using Formatting
 
 using TopOpt
-# using TopOpt.TopOptProblems.Visualization: visualize
+using TopOpt.TopOptProblems.Visualization: visualize
 using LinearAlgebra, StatsFuns
 using StatsFuns: logsumexp
 
 include("../utils.jl")
 
 using Nonconvex
+Nonconvex.@load Ipopt
+Nonconvex.@load NLopt
 Nonconvex.@load Percival
 
 RESULT_DIR = joinpath(@__DIR__, "results");
 
-function optimize_domain(problem_name, opt_task; verbose=false, write=false, optimizer="percival", distance="")
+function optimize_domain(problem_name, opt_task; verbose=false, write=false, optimizer="percival", distance="l2",
+    deflation_iters=5)
     result_data = Dict()
+    objs = Float64[]
+
+    size_ratio = 1
 
     E = 1.0 # Young’s modulus
     v = 0.3 # Poisson’s ratio
     f = 1.0 # downward force
     rmin = 4.0
-    size_ratio = 1
     problems = Dict(
         "cantilever_beam" => PointLoadCantilever(Val{:Linear}, (80*size_ratio, 20*size_ratio), (1.0, 1.0), E, v, f),
         "half_mbb_beam" => HalfMBB(Val{:Linear}, (60*size_ratio, 20*size_ratio), (1.0, 1.0), E, v, f),
@@ -33,6 +39,11 @@ function optimize_domain(problem_name, opt_task; verbose=false, write=false, opt
     problem = problems[problem_name]
     problem_config = "$(problem_name)_$(optimizer)_$distance"
 
+    problem_result_dir = joinpath(RESULT_DIR, problem_config)
+    if !ispath(problem_result_dir)
+        mkdir(problem_result_dir)
+    end
+
     V = 0.5 # volume fraction
     xmin = 0.0001 # minimum density
     p = 4.0
@@ -40,6 +51,8 @@ function optimize_domain(problem_name, opt_task; verbose=false, write=false, opt
     solver = FEASolver(Direct, problem; xmin=xmin, penalty=penalty)
     TopOpt.setpenalty!(solver, penalty.p)
     filter = TopOpt.DensityFilter(solver; rmin=rmin)
+    result_data["config"] = Dict("E" => E, "ν" => v, "f" => f, "rmin" => rmin,
+        "penalty" => p, "xmin" => xmin, "vol_fraction" => V)
 
     x0 = fill(V, length(solver.vars))
     nelem = length(x0)
@@ -79,6 +92,7 @@ function optimize_domain(problem_name, opt_task; verbose=false, write=false, opt
     end
 
     Nonconvex.NonconvexCore.show_residuals[] = verbose
+    result_data["initial_obj"] = obj(x0)
 
     m = Model(obj)
     addvar!(m, zeros(nelem), ones(nelem))
@@ -90,75 +104,110 @@ function optimize_domain(problem_name, opt_task; verbose=false, write=false, opt
     elseif optimizer == "mma"
         alg = MMA87()
         options = MMAOptions(; maxiter=100, tol=Nonconvex.Tolerance(; kkt=0.001))
+    elseif optimizer == "nlopt"
+        alg = NLoptAlg(:LD_MMA)
+        options = NLoptOptions()
+    elseif optimizer == "ipopt"
+        alg = IpoptAlg()
+        options = IpoptOptions(tol = 1e-4, max_iter=1000)
     else
         error("Undefined optimizer $optimizer")
     end
     convcriteria = Nonconvex.KKTCriteria()
 
+    println("Initial solve:")
+    st_time = time()
     r1 = Nonconvex.optimize(m, alg, x0; options=options, convcriteria = convcriteria)
-    println("Minimum: $(r1.minimum); Constraint: $(maximum(constr(r1.minimizer)))")
+    runtime = time() - st_time
+    printfmt("Minimum: {:.3f}; Constraint: {:.3f}; runtime {:.3f}\n", r1.minimum, maximum(constr(r1.minimizer)), runtime)
 
     # fig1 = TopOpt.TopOptProblems.Visualization.visualize(problem, topology=filter(r1.minimizer))
-    fig1 = TopOpt.TopOptProblems.Visualization.visualize(problem, topology=r1.minimizer)
+    fig1 = TopOpt.TopOptProblems.Visualization.visualize(problem, topology=r1.minimizer, undeformed_mesh_color=(:black, 1.0))
     hidedecorations!(fig1.current_axis.x)
-    var_fig = lines(r1.minimizer)
+    # var_fig = lines(r1.minimizer)
+    push!(objs, r1.minimum)
  
     if write
-        result_data["r1"] = Dict("minimizer" => r1.minimizer, "minimum" => r1.minimum)
-        save(joinpath(RESULT_DIR, "$(problem_config)_r1.png"), fig1)
-        save(joinpath(RESULT_DIR, "$(problem_config)_x1.png"), var_fig)
-        # save(joinpath(RESULT_DIR, "$(problem_config)_r1.pdf"), fig1, pt_per_unit = 1)
+        result_data["init_solve"] = Dict("minimizer" => r1.minimizer, "minimum" => r1.minimum)
+        save(joinpath(problem_result_dir, "r1.png"), fig1)
+        save(joinpath(problem_result_dir, "r1.pdf"), fig1, pt_per_unit = 1)
+        # save(joinpath(problem_result_dir, "$(problem_config)_x1.png"), var_fig)
     else
         display(fig1)
         wait_for_key("Enter to continue...")
-        display(var_fig)
-        wait_for_key("Check variable distribution...")
+        # display(var_fig)
+        # wait_for_key("Check variable distribution...")
     end
 
     if endswith(opt_task, "deflation")
         xstar = r1.minimizer
         shift = 1.0
         power = 4.0
-        radius = 2.0
-        function deflation_constr(X)
-            # L-2 distance
-            # return 1.0/norm(X[1:end-1]-xstar, 2)^power + shift - X[end]
-            return max(norm(X[1:end-1]-xstar, 2)- radius, 0)^(-power) - X[end]
+        radius = 10.0
+        y_upperbound = 1e2
+        result_data["deflation_config"] = Dict("power" => power, "radius" => radius, "dist" => distance,
+            "y_upperbound" => y_upperbound)
+
+        if distance == "l2"
+            dist_fn = (x,y) -> norm(x-y, 2)
+        elseif distance == "kl"
+            dist_fn = (x,y) -> multi_bernoulli_kl_divergence(x,y)
         end
 
-        # * remake problem because dim changes by 1
-        df_obj = x -> obj(x[1:end-1])
-        df_constr = x -> constr(x[1:end-1])
+        solutions = [r1.minimizer]
+        for iter in 1:deflation_iters
+            println("-"^10)
+            println("Iter - $iter")
+            function deflation_constr(X::Vector)
+                d = zero(eltype(X))
+                for sol in solutions
+                    d += max(dist_fn(X[1:end-1], sol) - radius, 0)^(-power)
+                    # d += dist_fn(X[1:end-1], sol)^(-power) + shift
+                end
+                println("d = $d, y = $(X[end])")
+                return d - X[end]
+            end
 
-        m = Model(df_obj)
-        addvar!(m, zeros(nelem), ones(nelem); integer=trues(nelem))
-        # * deflation slack variable y
-        addvar!(m, [-1e2], [1e2])
-        add_ineq_constraint!(m, df_constr)
-        add_ineq_constraint!(m, deflation_constr)
+            # * remake problem because dim changes by 1
+            df_obj = x -> obj(x[1:end-1])
+            df_constr = x -> constr(x[1:end-1])
 
-        df_alg = alg
-        df_options = options
-        df_convcriteria = convcriteria
+            m = Model(df_obj)
+            addvar!(m, zeros(nelem), ones(nelem); integer=trues(nelem))
+            # * deflation slack variable y
+            addvar!(m, [0], [y_upperbound])
+            add_ineq_constraint!(m, df_constr)
+            add_ineq_constraint!(m, deflation_constr)
 
-        r2 = optimize(m, df_alg, vcat(x0, 1.0), options = df_options, convcriteria = df_convcriteria)
-        println("Minimum: $(r2.minimum); Constraint: $(maximum(df_constr(r2.minimizer)))")
+            df_alg = alg
+            df_options = options
+            df_convcriteria = convcriteria
 
-        fig2 = TopOpt.TopOptProblems.Visualization.visualize(problem, topology=r2.minimizer[1:end-1])
-        hidedecorations!(fig2.current_axis.x)
-        var_fig = lines(r2.minimizer)
+            df_result = optimize(m, df_alg, vcat(x0, 1.0), options = df_options, convcriteria = df_convcriteria)
+            printfmt("Minimum: {:.3f}; Constraint: {:.3f}; DF Constraint: {:.3f}; runtime {:.3f}\n", 
+                df_result.minimum, maximum(df_constr(df_result.minimizer)), 
+                maximum(deflation_constr(df_result.minimizer)), runtime)
+            final_dist = dist_fn(r1.minimizer, df_result.minimizer[1:end-1])
+            println("Distance: $(final_dist)")
 
-        if write
-            result_data["r2"] = Dict("minimizer" => r2.minimizer, "minimum" => r2.minimum) #, "convstate" => r1.convstate)
-            save(joinpath(RESULT_DIR, "$(problem_config)_r2.png"), fig2)
-            save(joinpath(RESULT_DIR, "$(problem_config)_x2.png"), var_fig)
-            # save(joinpath(RESULT_DIR, "$(problem_config)_r2.pdf"), fig2, pt_per_unit = 1)
-        else
-            display(fig2)
-            wait_for_key("Enter to continue...")
-            display(var_fig)
-            wait_for_key("Check variable distribution...")
-        end
+            fig2 = TopOpt.TopOptProblems.Visualization.visualize(problem, topology=df_result.minimizer[1:end-1], 
+                undeformed_mesh_color=(:black, 1.0))
+            hidedecorations!(fig2.current_axis.x)
+            # var_fig = lines(df_result.minimizer)
+
+            if write
+                result_data["deflate_$(iter)"] = Dict("minimizer" => df_result.minimizer, "minimum" => df_result.minimum, "runtime" => runtime) #, "convstate" => r1.convstate)
+                save(joinpath(problem_result_dir, "deflate_r$(iter).png"), fig2)
+                save(joinpath(problem_result_dir, "deflate_r$(iter).pdf"), fig2, pt_per_unit = 1)
+                # save(joinpath(problem_result_dir, "$(problem_config)_x2.png"), var_fig)
+            else
+                display(fig2)
+                wait_for_key("Enter to continue...")
+                # display(var_fig)
+                # wait_for_key("Check variable distribution...")
+            end
+            push!(solutions, df_result.minimizer[1:end-1])
+        end # end deflation loop
     end
 end
 
@@ -172,7 +221,7 @@ function parse_commandline()
         "--problem"
             help = "problem to run"
             arg_type = String
-            default = "cantilever_beam"
+            default = "half_mbb_beam"
         "--task"
             help = "problem formulation"
             arg_type = String
@@ -180,11 +229,15 @@ function parse_commandline()
         "--optimizer"
             help = "optimizer choice"
             arg_type = String
-            default = "percival" #
+            default = "mma"
         "--distance"
             help = "distance measure choice"
             arg_type = String
             default = "l2" # kl, w2
+        "--deflate_iters"
+            help = "print extra info."
+            arg_type = Int
+            default = 5
         "--verbose"
             help = "print extra info."
             action = :store_true
@@ -202,7 +255,8 @@ function main()
     println("="^10)
 
     optimize_domain(parsed_args["problem"], parsed_args["task"], verbose=parsed_args["verbose"],
-        write=parsed_args["write"], optimizer=parsed_args["optimizer"], distance=parsed_args["distance"])
+        write=parsed_args["write"], optimizer=parsed_args["optimizer"], distance=parsed_args["distance"],
+        deflation_iters=parsed_args["deflate_iters"])
 end
 
 main()
