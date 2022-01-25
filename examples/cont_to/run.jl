@@ -20,12 +20,45 @@ Nonconvex.@load Percival
 
 RESULT_DIR = joinpath(@__DIR__, "results");
 
+function replot_problem_results(problem, problem_result_dir)
+    println("Loading data from $problem_result_dir")
+    result_data = load(joinpath(problem_result_dir, "data.jld"))
+    objs = Float64[]
+
+    r1_x = result_data["init_solve"]["minimizer"]
+    fig1 = TopOpt.TopOptProblems.Visualization.visualize(problem, topology=r1_x, undeformed_mesh_color=(:black, 1.0))
+    hidedecorations!(fig1.current_axis.x)
+    save(joinpath(problem_result_dir, "deflate_r$(iter)_replot.pdf"), fig1, pt_per_unit = 1)
+    push!(objs, result_data["init_solve"]["minimum"] )
+
+    for k in keys(result_data)
+        if !occursin("deflate", k)
+            continue
+        end
+        df_result_minimizer = result_data[k]["minimizer"]
+        df_result_minimum = result_data[k]["minimum"]
+
+        fig2 = TopOpt.TopOptProblems.Visualization.visualize(problem, topology=df_result_minimizer[1:end-1], 
+            undeformed_mesh_color=(:black, 1.0))
+        hidedecorations!(fig2.current_axis.x)
+        save(joinpath(problem_result_dir, "deflate_r$(iter)_replot.pdf"), fig2, pt_per_unit = 1)
+        push!(objs, df_result_minimum)
+    end
+
+    obj_fig = Figure(resolution=(800,800), font="Arial")
+    ax = Axis(obj_fig[1,1])
+    ax.xlabel = "deflation iterations"
+    ax.ylabel = "objectives"
+    lines!(ax, 0:1:length(objs)-1, objs)
+    save(joinpath(problem_result_dir, "_obj_history_replot.pdf"), obj_fig)
+end
+
 function optimize_domain(problem_name, opt_task; verbose=false, write=false, optimizer="percival", distance="l2",
-    deflation_iters=5)
+    deflation_iters=5, replot=false)
     result_data = Dict()
     objs = Float64[]
 
-    size_ratio = 1
+    size_ratio = 2 # 3
 
     E = 1.0 # Young’s modulus
     v = 0.3 # Poisson’s ratio
@@ -42,6 +75,12 @@ function optimize_domain(problem_name, opt_task; verbose=false, write=false, opt
     problem_result_dir = joinpath(RESULT_DIR, problem_config)
     if !ispath(problem_result_dir)
         mkdir(problem_result_dir)
+    end
+
+    if replot
+        replot_problem_results(problem, problem_result_dir)
+        println("Replotting done.")
+        return
     end
 
     V = 0.5 # volume fraction
@@ -143,7 +182,7 @@ function optimize_domain(problem_name, opt_task; verbose=false, write=false, opt
         xstar = r1.minimizer
         shift = 1.0
         power = 4.0
-        radius = 10.0
+        radius = 30.0
         y_upperbound = 1e2
         result_data["deflation_config"] = Dict("power" => power, "radius" => radius, "dist" => distance,
             "y_upperbound" => y_upperbound)
@@ -189,6 +228,7 @@ function optimize_domain(problem_name, opt_task; verbose=false, write=false, opt
                 maximum(deflation_constr(df_result.minimizer)), runtime)
             final_dist = dist_fn(r1.minimizer, df_result.minimizer[1:end-1])
             println("Distance: $(final_dist)")
+            push!(objs, df_result.minimum)
 
             fig2 = TopOpt.TopOptProblems.Visualization.visualize(problem, topology=df_result.minimizer[1:end-1], 
                 undeformed_mesh_color=(:black, 1.0))
@@ -196,7 +236,7 @@ function optimize_domain(problem_name, opt_task; verbose=false, write=false, opt
             # var_fig = lines(df_result.minimizer)
 
             if write
-                result_data["deflate_$(iter)"] = Dict("minimizer" => df_result.minimizer, "minimum" => df_result.minimum, "runtime" => runtime) #, "convstate" => r1.convstate)
+                result_data["deflate_$(iter)"] = Dict("minimizer" => df_result.minimizer, "minimum" => df_result.minimum, "runtime" => runtime, "distance_to_xstar" => final_dist)
                 save(joinpath(problem_result_dir, "deflate_r$(iter).png"), fig2)
                 save(joinpath(problem_result_dir, "deflate_r$(iter).pdf"), fig2, pt_per_unit = 1)
                 # save(joinpath(problem_result_dir, "$(problem_config)_x2.png"), var_fig)
@@ -208,6 +248,20 @@ function optimize_domain(problem_name, opt_task; verbose=false, write=false, opt
             end
             push!(solutions, df_result.minimizer[1:end-1])
         end # end deflation loop
+
+        if write
+            obj_fig = Figure(resolution=(800,800), font="Arial")
+            ax = Axis(obj_fig[1,1])
+            ax.xlabel = "deflation iterations"
+            ax.ylabel = "objectives"
+            lines!(ax, 0:1:length(objs)-1, objs)
+            save(joinpath(problem_result_dir, "_obj_history.pdf"), obj_fig)
+            save(joinpath(problem_result_dir, "_obj_history.png"), obj_fig)
+        end
+    end
+
+    if write
+        save(joinpath(problem_result_dir, "data.jld"), "result_data", result_data)
     end
 end
 
@@ -225,11 +279,11 @@ function parse_commandline()
         "--task"
             help = "problem formulation"
             arg_type = String
-            default = "min_vol_stress_constrained_deflation"
+            default = "min_compliance_vol_constrained_deflation" # "min_vol_stress_constrained_deflation"
         "--optimizer"
             help = "optimizer choice"
             arg_type = String
-            default = "mma"
+            default = "nlopt" # mma
         "--distance"
             help = "distance measure choice"
             arg_type = String
@@ -244,6 +298,9 @@ function parse_commandline()
         "--write"
             help = "export result."
             action = :store_true
+        "--replot"
+            help = "parse and replot saved results."
+            action = :store_true
     end
     return parse_args(s)
 end
@@ -256,7 +313,7 @@ function main()
 
     optimize_domain(parsed_args["problem"], parsed_args["task"], verbose=parsed_args["verbose"],
         write=parsed_args["write"], optimizer=parsed_args["optimizer"], distance=parsed_args["distance"],
-        deflation_iters=parsed_args["deflate_iters"])
+        deflation_iters=parsed_args["deflate_iters"], replot=parsed_args["replot"])
 end
 
 main()
