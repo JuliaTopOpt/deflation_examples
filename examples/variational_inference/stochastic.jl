@@ -23,10 +23,10 @@ function kldivergence(p::MvNormal, q::MvNormal)
 end
 getq(θ) = MvNormal([θ[1]], Diagonal([exp(θ[2])]))
 
-function run_exp(means, initθ, rng; power = 3.0, shift = 1.0, nsamples = 5, niters = 10000, max_barrier_multiple = 1000, quad_multiple = 0.01, nsolves = length(means))
+function run_exp(means, initθ, rng; power = 3.0, shift = 0.0, nsamples = 5, niters = 10000, max_barrier_multiple = 1000, quad_multiple = 0.01, nsolves = length(means), radius = 0.0)
     mixture = mixturef(means)
     logπ = x -> logpdf(mixture, x[1])
-    plot(logπ, minimum(means) - 5, maximum(means) + 5)
+    plot(logπ, minimum(means) - 5, maximum(means) + 5, label = "target")
     variational_objective = AdvancedVI.ELBO()
 
     diff_results = DiffResults.GradientResult(initθ)
@@ -34,9 +34,9 @@ function run_exp(means, initθ, rng; power = 3.0, shift = 1.0, nsamples = 5, nit
         if length(solutions) > 0
             d = zero(eltype(x))
             for sol in solutions
-                d += (1/kldivergence(getq(x), getq(sol)))^power + shift
+                d += (1/max(kldivergence(getq(x), getq(sol)) - radius, 0))^power + shift
             end
-            @info "d = $d, y = $y"
+            @info "d = $(ForwardDiff.value(d)), y = $(ForwardDiff.value(y))"
             return d - y
         else
             return return -one(eltype(x))
@@ -72,7 +72,7 @@ function run_exp(means, initθ, rng; power = 3.0, shift = 1.0, nsamples = 5, nit
             @info "grad = $∇"
 
             if !all(isfinite, ∇)
-                d = θ .* randn(length(θ))
+                d = θ .* randn(rng, length(θ))
                 @. θ = θ - d
                 continue
             end
@@ -90,9 +90,9 @@ function run_exp(means, initθ, rng; power = 3.0, shift = 1.0, nsamples = 5, nit
     dists = getq.(solutions)
 
     # PDF plots
-    plt = plot(x -> exp(logπ(x)), minimum(means) - 5, maximum(means) + 5, legend = true)
-    map(dists) do dist
-        plot!(plt, x -> exp(logpdf(dist, [x])), minimum(means) - 5, maximum(means) + 5)
+    plt = plot(x -> exp(logπ(x)), minimum(means) - 5, maximum(means) + 5, legend = true, label = "target pdf")
+    map(enumerate(dists)) do (i, dist)
+        plot!(plt, x -> exp(logpdf(dist, [x])), minimum(means) - 5, maximum(means) + 5, label = "approx pdf $i")
         display(plt)
     end
 
@@ -109,7 +109,11 @@ means = 30 * randn(rng, 20)
 initθ = [0.0, 5.0, 6.0]
 nsolves = 10
 power = 3.0
-vals1 = run_exp(means, initθ, rng; nsolves, power)
+nsamples = 10
+radius = 1.0
+niters = 10000
+vals1 = run_exp(means, initθ, rng; nsolves, power, nsamples, radius)
 
-power = 3.0
-vals2 = run_exp(means, initθ, rng; nsolves, power)
+# power = 3.0
+# vals2 = run_exp(means, initθ, rng; nsolves, power, nsamples, radius)
+savefig("variational_inference.png")
