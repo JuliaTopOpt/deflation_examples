@@ -1,8 +1,8 @@
 using LinearAlgebra, StatsFuns, Nonconvex
 using LinearAlgebra: norm
 Nonconvex.@load Ipopt
-Nonconvex.@load NLopt
-Nonconvex.@load Multistart
+# Nonconvex.@load NLopt
+# Nonconvex.@load Multistart
 
 # Point load in the middle, kN
 P = -100.0
@@ -57,7 +57,6 @@ addvar!(model, [-1e3], [1e6])
 add_ineq_constraint!(model, deflation_constr)
 r2 = optimize(model, alg, vcat(x0, 1.0), options = options)
 @show(r2.minimizer, r2.minimum)
-
 
 ###########################
 
