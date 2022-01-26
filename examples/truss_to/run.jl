@@ -10,7 +10,7 @@ using TopOpt.TrussTopOptProblems.TrussVisualization: visualize
 using Arpack
 Nonconvex.@load Ipopt
 Nonconvex.@load NLopt
-Nonconvex.@load Juniper
+# Nonconvex.@load Juniper
 
 include("problem_defs.jl")
 include("../utils.jl")
@@ -120,6 +120,7 @@ function optimize_truss(problem, opt_task; verbose=false, write=false, optimizer
 
     m = Model(obj)
     if optimizer == "juniper"
+        error("Not fully developed.")
         addvar!(m, zeros(nelem), ones(nelem); integer=trues(nelem))
     else
         addvar!(m, zeros(nelem), ones(nelem))
@@ -302,6 +303,9 @@ function parse_commandline()
             action = :store_true
         "--write"
             help = "export result."
+            action = :store_true
+        "--replot"
+            help = "parse and replot saved results."
             action = :store_true
     end
     return parse_args(s)
