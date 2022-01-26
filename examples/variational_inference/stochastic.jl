@@ -116,4 +116,4 @@ vals1 = run_exp(means, initθ, rng; nsolves, power, nsamples, radius)
 
 # power = 3.0
 # vals2 = run_exp(means, initθ, rng; nsolves, power, nsamples, radius)
-savefig("variational_inference.png")
+savefig("variational_inference.pdf")
