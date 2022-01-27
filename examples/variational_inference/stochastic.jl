@@ -1,14 +1,5 @@
 using Revise, Distributions, StatsFuns, Plots, ProgressMeter, AdvancedVI, ForwardDiff, DiffResults, LinearAlgebra, Random, Flux, StableRNGs, Zygote, ChainRulesCore
 
-#=
-s ~ Bernoulli(0.5)
-if s == 0
-    x ~ Normal(-10.0, 1.0)
-else
-    x ~ Normal(10.0, 1.0)
-end
-=#
-
 function mixturef(means, stds = ones(length(means)))
     return MixtureModel(Normal.(means, stds))
 end
@@ -116,4 +107,4 @@ vals1 = run_exp(means, initθ, rng; nsolves, power, nsamples, radius)
 
 # power = 3.0
 # vals2 = run_exp(means, initθ, rng; nsolves, power, nsamples, radius)
-savefig("variational_inference.pdf")
+savefig("results/variational_inference.pdf")
