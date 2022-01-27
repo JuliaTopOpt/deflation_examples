@@ -21,16 +21,17 @@ function optimize_truss(problem, opt_task; verbose=false, write=false, optimizer
     result_data = Dict()
     objs = Float64[]
 
-    size_ratio = 1
-
     problem_result_dir = joinpath(RESULT_DIR, problem_config)
     if !ispath(problem_result_dir)
         mkdir(problem_result_dir)
     end
 
+    E = 10.0 # Young’s modulus
+    v = 0.3 # Poisson’s ratio
+    size_ratio = 1
     if problem == "dense_graph"
         force = [-1.0, 0]
-        problem = CustomPointLoadCantileverTruss((40*size_ratio,10*size_ratio),Tuple(ones(2)),10.0,0.3,force)
+        problem = CustomPointLoadCantileverTruss((40*size_ratio,10*size_ratio),Tuple(ones(2)),E,v,force)
     elseif problem == "tim"
         node_points, elements, mats, crosssecs, fixities, load_cases = load_truss_json(
             joinpath(@__DIR__, "tim_2d.json")
@@ -45,15 +46,17 @@ function optimize_truss(problem, opt_task; verbose=false, write=false, optimizer
 
     V = 0.3 # volume fraction
     xmin = 0.0001 # minimum density
-    p = 3.0
+    penalty_val = 3.0
 
-    penalty = TopOpt.PowerPenalty(p)
+    penalty = TopOpt.PowerPenalty(penalty_val)
     solver = FEASolver(Direct, problem; xmin=xmin, penalty=penalty)
     solver()
-    comp = TopOpt.Compliance(problem, solver)
+    result_data["config"] = Dict("E" => E, "ν" => v, "f" => f, "rmin" => rmin,
+        "penalty" => penalty_val, "xmin" => xmin, "vol_fraction" => V)
 
     # * comliance minimization objective
     if occursin("vol_constrained", opt_task) && occursin("min_compliance", opt_task)
+        comp = TopOpt.Compliance(problem, solver)
         obj = comp
         # volfrac = TopOpt.Volume(problem, solver)
         # constr = x -> volfrac(x) - V
@@ -93,19 +96,18 @@ function optimize_truss(problem, opt_task; verbose=false, write=false, optimizer
     convcriteria = Nonconvex.KKTCriteria()
 
     println("Initial solve:")
-    # https://julianonconvex.github.io/Nonconvex.jl/stable/algorithms/mma/#NonconvexCore.Tolerance
+    st_time = time()
     r1 = Nonconvex.optimize(m, alg, x0; options=options, convcriteria = convcriteria)
-    # println("$(r1.convstate)")
-    println("Minimum: $(r1.minimum); Constraint: $(maximum(constr(r1.minimizer)))")
+    runtime = time() - st_time
+    printfmt("Minimum: {:.3f}; Constraint: {:.3f}; runtime {:.3f}\n", r1.minimum, maximum(constr(r1.minimizer)), runtime)
 
     fig1 = visualize(problem, topology=r1.minimizer)
     hidedecorations!(fig1.current_axis.x)
     push!(objs, r1.minimum)
+
     if write
-        result_data["init_solve"] = Dict("minimizer" => r1.minimizer, "minimum" => r1.minimum)
-         #, "convstate" => r1.convstate)
+        result_data["init_solve"] = Dict("minimizer" => r1.minimizer, "minimum" => r1.minimum, "runtime" => runtime)
         save(joinpath(problem_result_dir, "r1.png"), fig1)
-        # # https://makie.juliaplots.org/stable/documentation/figure_size/#vector_graphics
         # save(joinpath(problem_result_dir, "r1.pdf"), fig1, pt_per_unit = 1)
     else
         display(fig1)
@@ -113,9 +115,11 @@ function optimize_truss(problem, opt_task; verbose=false, write=false, optimizer
     end
 
     if endswith(opt_task, "deflation")
-        shift = 1.0
         power = 4.0
         radius = 20.0
+        y_upperbound = 1e2
+        result_data["deflation_config"] = Dict("power" => power, "radius" => radius, "dist" => distance,
+            "y_upperbound" => y_upperbound)
 
         if distance == "l2"
             dist_fn = (x,y) -> norm(x-y, 2)
@@ -142,44 +146,38 @@ function optimize_truss(problem, opt_task; verbose=false, write=false, optimizer
             df_constr = x -> constr(x[1:end-1])
 
             m = Model(df_obj)
-            if optimizer == "juniper"
-                addvar!(m, zeros(nelem), ones(nelem); integer=trues(nelem))
-            else
-                addvar!(m, zeros(nelem), ones(nelem))
-            end
+            addvar!(m, zeros(nelem), ones(nelem))
             # * deflation slack variable y
-            addvar!(m, [0], [1e2])
+            addvar!(m, [0], [y_upperbound])
             add_ineq_constraint!(m, df_constr)
             add_ineq_constraint!(m, deflation_constr)
 
             df_alg = alg
-            df_options = 
-                # MMAOptions(
-                # # s_incr=1.0, s_decr=1.0, s_init = 0.1,
-                # maxiter=100, tol=Nonconvex.Tolerance(kkt=0.001), 
-                # dual_options=Optim.Options(iterations=100))
-                options
+            df_options = options
             df_convcriteria = convcriteria
 
+            st_time = time()
             df_result = optimize(m, df_alg, vcat(x0, 0.0), options = df_options, convcriteria = df_convcriteria)
-            # println("$(r2.convstate)")
-            println("Minimum: $(df_result.minimum); Constraint: $(maximum(df_constr(df_result.minimizer))); DF Constraint: $(maximum(deflation_constr(df_result.minimizer)))")
+            runtime = time() - st_time
+
+            printfmt("Minimum: {:.3f}; Constraint: {:.3f}; DF Constraint: {:.3f}; runtime {:.3f}\n", 
+                df_result.minimum, maximum(df_constr(df_result.minimizer)), 
+                maximum(deflation_constr(df_result.minimizer)), runtime)
             final_dist = dist_fn(r1.minimizer, df_result.minimizer[1:end-1])
             println("Distance: $(final_dist)")
-
             push!(objs, df_result.minimum)
+
             fig2 = visualize(problem, topology=df_result.minimizer[1:end-1])
             hidedecorations!(fig2.current_axis.x)
 
             if write
-                result_data["deflate_$(iter)"] = Dict("minimizer" => df_result.minimizer, "minimum" => df_result.minimum) #, "convstate" => r1.convstate)
+                result_data["deflate_$(iter)"] = Dict("minimizer" => df_result.minimizer, "minimum" => df_result.minimum, "runtime" => runtime, "distance_to_xstar" => final_dist)
                 save(joinpath(problem_result_dir, "deflate_r$(iter).png"), fig2)
                 # save(joinpath(problem_result_dir, "deflate_r$(iter).pdf"), fig2, pt_per_unit = 1)
             else
                 display(fig2)
                 wait_for_key("Enter to continue...")
             end
-
             push!(solutions, df_result.minimizer[1:end-1])
         end
 
@@ -192,7 +190,7 @@ function optimize_truss(problem, opt_task; verbose=false, write=false, optimizer
             # save(joinpath(problem_result_dir, "_obj_history.pdf"), obj_fig)
             save(joinpath(problem_result_dir, "_obj_history.png"), obj_fig)
         end
-    end
+    end # end deflation loop
 
     if write
         save(joinpath(problem_result_dir, "data.jld"), "result_data", result_data)

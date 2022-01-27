@@ -4,6 +4,7 @@
 deps/deps.jl
 
 .ipynb_checkpoints
+Manifest.toml
 
 .vscode
 # *.pdf

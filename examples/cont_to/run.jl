@@ -23,11 +23,11 @@ function optimize_domain(problem_name, opt_task; verbose=false, write=false, opt
     result_data = Dict()
     objs = Float64[]
 
-    size_ratio = 2
     E = 1.0 # Young’s modulus
     v = 0.3 # Poisson’s ratio
     f = 1.0 # downward force
     rmin = 4.0
+    size_ratio = 2
     problems = Dict(
         "cantilever_beam" => PointLoadCantilever(Val{:Linear}, (80*size_ratio, 20*size_ratio), (1.0, 1.0), E, v, f),
         "half_mbb_beam" => HalfMBB(Val{:Linear}, (60*size_ratio, 20*size_ratio), (1.0, 1.0), E, v, f),
@@ -48,13 +48,13 @@ function optimize_domain(problem_name, opt_task; verbose=false, write=false, opt
 
     V = 0.5 # volume fraction
     xmin = 0.0001 # minimum density
-    p = 4.0
-    penalty = TopOpt.PowerPenalty(p)
+    penalty_val = 4.0
+    penalty = TopOpt.PowerPenalty(penalty_val)
     solver = FEASolver(Direct, problem; xmin=xmin, penalty=penalty)
     TopOpt.setpenalty!(solver, penalty.p)
     filter = TopOpt.DensityFilter(solver; rmin=rmin)
     result_data["config"] = Dict("E" => E, "ν" => v, "f" => f, "rmin" => rmin,
-        "penalty" => p, "xmin" => xmin, "vol_fraction" => V)
+        "penalty" => penalty_val, "xmin" => xmin, "vol_fraction" => V)
 
     x0 = fill(V, length(solver.vars))
     nelem = length(x0)
@@ -107,27 +107,20 @@ function optimize_domain(problem_name, opt_task; verbose=false, write=false, opt
     runtime = time() - st_time
     printfmt("Minimum: {:.3f}; Constraint: {:.3f}; runtime {:.3f}\n", r1.minimum, maximum(constr(r1.minimizer)), runtime)
 
-    # fig1 = TopOpt.TopOptProblems.Visualization.visualize(problem, topology=filter(r1.minimizer))
     fig1 = TopOpt.TopOptProblems.Visualization.visualize(problem, topology=r1.minimizer, undeformed_mesh_color=(:black, 1.0))
     hidedecorations!(fig1.current_axis.x)
-    # var_fig = lines(r1.minimizer)
     push!(objs, r1.minimum)
  
     if write
-        result_data["init_solve"] = Dict("minimizer" => r1.minimizer, "minimum" => r1.minimum)
+        result_data["init_solve"] = Dict("minimizer" => r1.minimizer, "minimum" => r1.minimum, "runtime" => runtime)
         save(joinpath(problem_result_dir, "r1.png"), fig1)
-        save(joinpath(problem_result_dir, "r1.pdf"), fig1, pt_per_unit = 1)
-        # save(joinpath(problem_result_dir, "$(problem_config)_x1.png"), var_fig)
+        # save(joinpath(problem_result_dir, "r1.pdf"), fig1, pt_per_unit = 1)
     else
         display(fig1)
         wait_for_key("Enter to continue...")
-        # display(var_fig)
-        # wait_for_key("Check variable distribution...")
     end
 
     if endswith(opt_task, "deflation")
-        xstar = r1.minimizer
-        shift = 1.0
         power = 4.0
         radius = 30.0
         y_upperbound = 1e2
@@ -201,7 +194,7 @@ function optimize_domain(problem_name, opt_task; verbose=false, write=false, opt
             ax.xlabel = "deflation iterations"
             ax.ylabel = "objectives"
             lines!(ax, 0:1:length(objs)-1, objs)
-            save(joinpath(problem_result_dir, "_obj_history.pdf"), obj_fig)
+            # save(joinpath(problem_result_dir, "_obj_history.pdf"), obj_fig)
             save(joinpath(problem_result_dir, "_obj_history.png"), obj_fig)
         end
     end
