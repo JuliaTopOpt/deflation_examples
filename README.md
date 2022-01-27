@@ -2,6 +2,20 @@
 
 Please use the package environment by `julia --project=.` and `]instantiate`
 
+## Classical variational inference
+
+```julia
+using Runner
+@runit "examples/variational_inference/stochastic.jl
+```
+
+## Pathfinder algorithm
+
+```julia
+using Runner
+@runit "examples/variational_inference/pathfinder.jl
+```
+
 ## Truss TopOpt examples
 
 ```julia
@@ -19,13 +33,7 @@ using Runner
 Other cases:
 
 ```julia
+using Runner
 @runit "examples\\cont_to\\run.jl --task min_compliance_vol_constrained --optimizer mma"
 @runit "examples\\cont_to\\run.jl --task min_vol_compliance_constrained --optimizer mma"
 ```
-
-## TODO
-
-- [ ] stress-constrained continuum
-- [ ] vol-constrained compliance-min truss
-- [ ] buckling constrained truss
-- [ ] mixed_integer truss
