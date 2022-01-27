@@ -35,7 +35,7 @@ for ndists in [2, 4, 6, 8]
     deflation_radius = 0.0
 
     q1, ϕ1, component_ids1, plt = run_pathfinder(; nruns, ndraws, ndists, rng, means, initx, deflation_radius)
-    savefig(plt, "pathfinder_$ndists.pdf")
+    savefig(plt, "results/pathfinder_$ndists.pdf")
 end
 
 # # No deflation
