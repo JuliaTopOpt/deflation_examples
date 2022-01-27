@@ -60,9 +60,10 @@ function optimize_truss(problem_name, opt_task; verbose=false, write=false, opti
     if occursin("vol_constrained", opt_task) && occursin("min_compliance", opt_task)
         comp = TopOpt.Compliance(problem, solver)
         obj = comp
-        # volfrac = TopOpt.Volume(problem, solver)
-        # constr = x -> volfrac(x) - V
-        constr = x -> sum(x) / length(x) - V
+        volfrac = TopOpt.Volume(problem, solver)
+        constr = x -> volfrac(x) - V
+        # or equivalently:
+        # constr = x -> sum(x) / length(x) - V
     else
         error("Undefined task $(opt_task)")
     end
@@ -89,9 +90,6 @@ function optimize_truss(problem_name, opt_task; verbose=false, write=false, opti
     elseif optimizer == "ipopt"
         alg = IpoptAlg()
         options = IpoptOptions(tol = 1e-4, max_iter=1000)
-    elseif optimizer == "sdp"
-        alg = SDPBarrierAlg(; sub_alg=IpoptAlg())
-        options = SDPBarrierOptions(; sub_options=IpoptOptions(; max_iter=200))
     else
         error("Undefined optimizer $optimizer")
     end

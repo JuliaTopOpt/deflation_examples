@@ -1,3 +1,6 @@
+using GLMakie
+GLMakie.activate!()
+using Makie
 using JLD
 ##############################
 
@@ -36,4 +39,23 @@ function replot_problem_results(problem, problem_result_dir)
     # ax.ylabel = "objectives"
     lines!(ax, 0:1:length(objs)-1, objs)
     save(joinpath(problem_result_dir, "_obj_history_replot.pdf"), obj_fig)
+end
+
+function plot_runtime(problem_result_dir)
+    println("Loading data from $problem_result_dir")
+    result_data = load(joinpath(problem_result_dir, "data.jld"))["result_data"]
+    runtimes = Float64[]
+    push!(runtimes, result_data["init_solve"]["runtime"] )
+    for k in keys(result_data)
+        if !occursin("deflate", k)
+            continue
+        end
+        push!(runtimes, result_data[k]["runtime"])
+    end
+    println(runtimes)
+    obj_fig = Figure(resolution=(800,800), font="Arial")
+    ax = Axis(obj_fig[1,1])
+    lines!(ax, 0:1:length(runtimes)-1, runtimes)
+    save(joinpath(problem_result_dir, "_runtimes.png"), obj_fig)
+    println("Initial runtime $(runtimes[1]), avr deflated runtime $(sum(runtimes[2:end])/(length(runtimes)-1))")
 end
