@@ -1,4 +1,4 @@
-using Revise, Distributions, StatsFuns, Plots, ProgressMeter, AdvancedVI, ForwardDiff, DiffResults, LinearAlgebra, Random, Flux, StableRNGs, Zygote, ChainRulesCore
+using Revise, Distributions, StatsFuns, Plots, ProgressMeter, AdvancedVI, ForwardDiff, DiffResults, LinearAlgebra, Random, Flux, StableRNGs, Zygote, ChainRulesCore, JLD
 
 function mixturef(means, stds = ones(length(means)))
     return MixtureModel(Normal.(means, stds))
@@ -14,10 +14,10 @@ function kldivergence(p::MvNormal, q::MvNormal)
 end
 getq(θ) = MvNormal([θ[1]], Diagonal([exp(θ[2])]))
 
-function run_exp(means, initθ, rng; power = 3.0, shift = 0.0, nsamples = 5, niters = 10000, max_barrier_multiple = 1000, quad_multiple = 0.01, nsolves = length(means), radius = 0.0)
+function run_exp(means, initθ, rng; power = 3.0, shift = 0.0, nsamples = 5, niters = 10000, max_barrier_multiple = 1000, quad_multiple = 0.01, nsolves = length(means), radius = 0.0, verbose=false)
     mixture = mixturef(means)
     logπ = x -> logpdf(mixture, x[1])
-    plot(logπ, minimum(means) - 5, maximum(means) + 5, label = "target")
+    Plots.plot(logπ, minimum(means) - 5, maximum(means) + 5, label = "target")
     variational_objective = AdvancedVI.ELBO()
 
     diff_results = DiffResults.GradientResult(initθ)
@@ -27,7 +27,9 @@ function run_exp(means, initθ, rng; power = 3.0, shift = 0.0, nsamples = 5, nit
             for sol in solutions
                 d += (1/max(kldivergence(getq(x), getq(sol)) - radius, 0))^power + shift
             end
-            @info "d = $(ForwardDiff.value(d)), y = $(ForwardDiff.value(y))"
+            if verbose
+                @info "d = $(ForwardDiff.value(d)), y = $(ForwardDiff.value(y))"
+            end
             return d - y
         else
             return return -one(eltype(x))
@@ -37,16 +39,22 @@ function run_exp(means, initθ, rng; power = 3.0, shift = 0.0, nsamples = 5, nit
     alg = ADVI(nsamples, niters)
     chunk_size = length(initθ)
     solutions = []
+    runtimes = []
     for _ in 1:nsolves
+        st_time = time()
         θ = copy(initθ) #[0.1 * randn(); 1.0; 1.0]
         optimizer = AdvancedVI.DecayedADAGrad()
         step = 1
         prog = ProgressMeter.Progress(alg.max_iters, 1)
         while (step ≤ alg.max_iters)
-            @info "θ = $θ"
+            if verbose
+                @info "θ = $θ"
+            end
 
             multiple = max(step / alg.max_iters * max_barrier_multiple, 1)
-            @info "multiple = $multiple"
+            if verbose
+                @info "multiple = $multiple"
+            end
 
             function f(θ_)
                 return -variational_objective(
@@ -54,13 +62,17 @@ function run_exp(means, initθ, rng; power = 3.0, shift = 0.0, nsamples = 5, nit
                     alg.samples_per_step
                 ) + (-log(max(-deflation(θ_[1:end-1], exp(θ_[end])), 1e-8)) + quad_multiple * exp(θ_[3])^2) / multiple
             end
-            @info "f(θ) = $(f(θ))"
+            if verbose
+                @info "f(θ) = $(f(θ))"
+            end
 
             chunk = ForwardDiff.Chunk(min(length(θ), chunk_size))
             config = ForwardDiff.GradientConfig(f, θ, chunk)
             ForwardDiff.gradient!(diff_results, f, θ, config)
             ∇ = DiffResults.gradient(diff_results)
-            @info "grad = $∇"
+            if verbose
+                @info "grad = $∇"
+            end
 
             if !all(isfinite, ∇)
                 d = θ .* randn(rng, length(θ))
@@ -75,15 +87,17 @@ function run_exp(means, initθ, rng; power = 3.0, shift = 0.0, nsamples = 5, nit
             ProgressMeter.next!(prog)
         end
         push!(solutions, θ[1:end-1])
+        runtime = time() - st_time
+        push!(runtimes, runtime)
     end
 
     # Optimal distributions
     dists = getq.(solutions)
 
     # PDF plots
-    plt = plot(x -> exp(logπ(x)), minimum(means) - 5, maximum(means) + 5, legend = true, label = "target pdf")
+    plt = Plots.plot(x -> exp(logπ(x)), minimum(means) - 5, maximum(means) + 5, legend = true, label = "target pdf")
     map(enumerate(dists)) do (i, dist)
-        plot!(plt, x -> exp(logpdf(dist, [x])), minimum(means) - 5, maximum(means) + 5, label = "approx pdf $i")
+        Plots.plot!(plt, x -> exp(logpdf(dist, [x])), minimum(means) - 5, maximum(means) + 5, label = "approx pdf $i")
         display(plt)
     end
 
@@ -91,7 +105,7 @@ function run_exp(means, initθ, rng; power = 3.0, shift = 0.0, nsamples = 5, nit
     vals = map(dists) do dist
         -variational_objective(rng, alg, dist, logπ, 1000)
     end
-    return vals
+    return vals, runtimes
 end
 
 rng = StableRNG(123)
@@ -103,8 +117,11 @@ power = 3.0
 nsamples = 10
 radius = 1.0
 niters = 10000
-vals1 = run_exp(means, initθ, rng; nsolves, power, nsamples, radius)
+verbose = false
+vals1, runtimes = run_exp(means, initθ, rng; nsolves=nsolves, power=power, nsamples=nsamples, radius=radius, verbose=verbose)
 
 # power = 3.0
 # vals2 = run_exp(means, initθ, rng; nsolves, power, nsamples, radius)
-savefig("results/variational_inference.pdf")
+RESULT_DIR = joinpath(@__DIR__, "results");
+savefig(joinpath(RESULT_DIR, "variational_inference.pdf"))
+save(joinpath(RESULT_DIR, "variational_inference_result.jld"), "objectives", vals1, "runtimes", runtimes)

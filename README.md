@@ -1,6 +1,6 @@
 # deflation_examples
 
-Please use the package environment by `julia --project=.` and `]instantiate`
+Please use the package environment by `julia --project=.` and `]instantiate`.
 
 ## Classical variational inference
 
@@ -20,20 +20,12 @@ using Runner
 
 ```julia
 using Runner
-@runit "examples/truss_to/run.jl --problem dense_graph --task min_compliance_vol_constrained_deflation --optimizer mma"
+@runit "examples/truss_to/run.jl --problem dense_graph --task min_compliance_vol_constrained_deflation --optimizer nlopt --deflate_iters 5"
 ```
 
 ## Continuum TopOpt examples
 
 ```julia
 using Runner
-@runit "examples\\cont_to\\run.jl --task min_vol_stress_constrained_deflation --optimizer percival"
-```
-
-Other cases:
-
-```julia
-using Runner
-@runit "examples\\cont_to\\run.jl --task min_compliance_vol_constrained --optimizer mma"
-@runit "examples\\cont_to\\run.jl --task min_vol_compliance_constrained --optimizer mma"
+@runit "examples\\cont_to\\run.jl --task min_compliance_vol_constrained_deflation --optimizer nlopt --deflate_iters 5"
 ```

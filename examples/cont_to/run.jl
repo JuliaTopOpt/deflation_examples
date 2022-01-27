@@ -1,7 +1,6 @@
-# using GLMakie
-# GLMakie.activate!()
-using CairoMakie
-CairoMakie.activate!()
+using GLMakie
+# using CairoMakie
+GLMakie.activate!()
 using Makie
 using JLD
 using Formatting
@@ -18,7 +17,7 @@ Nonconvex.@load NLopt
 
 RESULT_DIR = joinpath(@__DIR__, "results");
 
-function optimize_domain(problem_name, opt_task; verbose=false, write=false, optimizer="percival", distance="l2",
+function optimize_domain(problem_name, opt_task; verbose=false, write=false, optimizer="nlopt", distance="l2",
     deflation_iters=5, replot=false)
     result_data = Dict()
     objs = Float64[]
@@ -129,8 +128,8 @@ function optimize_domain(problem_name, opt_task; verbose=false, write=false, opt
 
         if distance == "l2"
             dist_fn = (x,y) -> norm(x-y, 2)
-        elseif distance == "kl"
-            dist_fn = (x,y) -> multi_bernoulli_kl_divergence(x,y)
+        else
+            error("Unimplemented distance $distance")
         end
 
         solutions = [r1.minimizer]

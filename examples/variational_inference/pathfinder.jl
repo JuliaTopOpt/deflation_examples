@@ -7,7 +7,7 @@ function run_pathfinder(; nruns = 10, ndraws = 1000_000, ndraws_per_run = ndraws
     mixture = mixturef(means)
     logπ = x -> logpdf(mixture, x[1])
     ∇logπ = x -> ForwardDiff.gradient(logπ, x)
-    plt = plot(logπ, minimum(means) - 5, maximum(means) + 5, label = "target pdf", legend = legend = :outertopright, title = plot_title)
+    plt = Plots.plot(logπ, minimum(means) - 5, maximum(means) + 5, label = "target pdf", legend = legend = :outertopright, title = plot_title)
     @show means
 
     # x₀s = [30 * randn(rng, length(initx)) for _ in 1:nruns]
@@ -21,11 +21,12 @@ function run_pathfinder(; nruns = 10, ndraws = 1000_000, ndraws_per_run = ndraws
     )
 
     logπ2 = x -> logpdf(q1, [x])
-    plot!(plt, logπ2, minimum(means) - 5, maximum(means) + 5, label = "approx")
+    Plots.plot!(plt, logπ2, minimum(means) - 5, maximum(means) + 5, label = "approx")
 
     return q1, ϕ1, component_ids1, plt
 end
 
+RESULT_DIR = joinpath(@__DIR__, "results");
 for ndists in [2, 4, 6, 8]
     nruns = 100
     ndraws = 1000
@@ -35,7 +36,7 @@ for ndists in [2, 4, 6, 8]
     deflation_radius = 0.0
 
     q1, ϕ1, component_ids1, plt = run_pathfinder(; nruns, ndraws, ndists, rng, means, initx, deflation_radius)
-    savefig(plt, "results/pathfinder_$ndists.pdf")
+    savefig(plt, joinpath(RESULT_DIR, "pathfinder_$ndists.pdf"))
 end
 
 # # No deflation
@@ -46,4 +47,4 @@ end
 #     rng=rng,
 # )
 # logπ3 = x -> logpdf(q2, [x])
-# plot!(logπ3, minimum(means) - 5, maximum(means) + 5)
+# Plots.plot!(logπ3, minimum(means) - 5, maximum(means) + 5)

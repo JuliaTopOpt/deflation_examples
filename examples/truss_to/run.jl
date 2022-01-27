@@ -1,8 +1,9 @@
-# using GLMakie
-using CairoMakie
-CairoMakie.activate!()
+using GLMakie
+# using CairoMakie
+GLMakie.activate!()
 using Makie
 using JLD
+using Formatting
 
 import Optim
 using TopOpt
@@ -16,32 +17,34 @@ using .DeflateTruss
 
 RESULT_DIR = joinpath(@__DIR__, "results");
 
-function optimize_truss(problem, opt_task; verbose=false, write=false, optimizer="mma", distance="l2",
+function optimize_truss(problem_name, opt_task; verbose=false, write=false, optimizer="mma", distance="l2",
     deflation_iters=5)
     result_data = Dict()
     objs = Float64[]
 
-    problem_result_dir = joinpath(RESULT_DIR, problem_config)
-    if !ispath(problem_result_dir)
-        mkdir(problem_result_dir)
-    end
-
-    E = 10.0 # Young’s modulus
+    E = 1.0 # Young’s modulus
     v = 0.3 # Poisson’s ratio
     size_ratio = 1
-    if problem == "dense_graph"
-        force = [-1.0, 0]
-        problem = CustomPointLoadCantileverTruss((40*size_ratio,10*size_ratio),Tuple(ones(2)),E,v,force)
+    if problem_name == "dense_graph"
+        f = [0.0, 100.0]
+        problem = CustomPointLoadCantileverTruss((40*size_ratio,10*size_ratio),Tuple(ones(2)),E,v,f)
     elseif problem == "tim"
         node_points, elements, mats, crosssecs, fixities, load_cases = load_truss_json(
             joinpath(@__DIR__, "tim_2d.json")
         );
         loads = load_cases["0"]
+        f = "load case 0"
         problem = TrussProblem(
             Val{:Linear}, node_points, elements, loads, fixities, mats, crosssecs
         );
     else
-        error("Unsupported problem $problem")
+        error("Unsupported problem $problem_name")
+    end
+
+    problem_config = "$(problem_name)_$(opt_task)_$(optimizer)_$distance"
+    problem_result_dir = joinpath(RESULT_DIR, problem_config)
+    if !ispath(problem_result_dir)
+        mkdir(problem_result_dir)
     end
 
     V = 0.3 # volume fraction
@@ -51,8 +54,7 @@ function optimize_truss(problem, opt_task; verbose=false, write=false, optimizer
     penalty = TopOpt.PowerPenalty(penalty_val)
     solver = FEASolver(Direct, problem; xmin=xmin, penalty=penalty)
     solver()
-    result_data["config"] = Dict("E" => E, "ν" => v, "f" => f, "rmin" => rmin,
-        "penalty" => penalty_val, "xmin" => xmin, "vol_fraction" => V)
+    result_data["config"] = Dict("E" => E, "ν" => v, "f" => f, "penalty" => penalty_val, "xmin" => xmin, "vol_fraction" => V)
 
     # * comliance minimization objective
     if occursin("vol_constrained", opt_task) && occursin("min_compliance", opt_task)
@@ -65,7 +67,7 @@ function optimize_truss(problem, opt_task; verbose=false, write=false, optimizer
         error("Undefined task $(opt_task)")
     end
 
-    x0 = fill(1.0, length(solver.vars))
+    x0 = fill(V, length(solver.vars))
     nelem = length(x0)
     println("#elements : $nelem")
 
@@ -123,8 +125,8 @@ function optimize_truss(problem, opt_task; verbose=false, write=false, optimizer
 
         if distance == "l2"
             dist_fn = (x,y) -> norm(x-y, 2)
-        elseif distance == "kl"
-            dist_fn = (x,y) -> multi_bernoulli_kl_divergence(x,y)
+        else
+            error("Unimplemented distance $distance")
         end
 
         solutions = [r1.minimizer]
