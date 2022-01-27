@@ -9,14 +9,12 @@ using Formatting
 using TopOpt
 using TopOpt.TopOptProblems.Visualization: visualize
 using LinearAlgebra, StatsFuns
-using StatsFuns: logsumexp
 
 include("../utils.jl")
 
 using Nonconvex
 Nonconvex.@load Ipopt
 Nonconvex.@load NLopt
-# Nonconvex.@load Percival
 
 RESULT_DIR = joinpath(@__DIR__, "results");
 
@@ -25,8 +23,7 @@ function optimize_domain(problem_name, opt_task; verbose=false, write=false, opt
     result_data = Dict()
     objs = Float64[]
 
-    size_ratio = 2 # 3
-
+    size_ratio = 2
     E = 1.0 # Young’s modulus
     v = 0.3 # Poisson’s ratio
     f = 1.0 # downward force
@@ -34,10 +31,9 @@ function optimize_domain(problem_name, opt_task; verbose=false, write=false, opt
     problems = Dict(
         "cantilever_beam" => PointLoadCantilever(Val{:Linear}, (80*size_ratio, 20*size_ratio), (1.0, 1.0), E, v, f),
         "half_mbb_beam" => HalfMBB(Val{:Linear}, (60*size_ratio, 20*size_ratio), (1.0, 1.0), E, v, f),
-        "l_beam" => LBeam(Val{:Linear}, Float64),
     )
     problem = problems[problem_name]
-    problem_config = "$(problem_name)_$(optimizer)_$distance"
+    problem_config = "$(problem_name)_$(opt_task)_$(optimizer)_$distance"
 
     problem_result_dir = joinpath(RESULT_DIR, problem_config)
     if !ispath(problem_result_dir)
@@ -74,40 +70,24 @@ function optimize_domain(problem_name, opt_task; verbose=false, write=false, opt
             # volume fraction constraint
             return sum(filter(x)) / length(x) - V
         end
-    elseif occursin("min_vol", opt_task)
+    elseif occursin("min_vol", opt_task) && occursin("compliance_constrained", opt_task)
         # minimize volume
         obj = x -> sum(filter(x)) / length(x) - V
-
-        if occursin("stress_constrained", opt_task)
-            stress = TopOpt.MicroVonMisesStress(solver)
-            constr = x -> begin
-                s = stress(filter(x))
-                thr = 10
-                vcat((s .- thr) / 100, logsumexp(s) - log(length(s)) - thr)
-            end
-        elseif occursin("compliance_constrained", opt_task)
-            comp = TopOpt.Compliance(problem, solver)
-            compliance_threshold = 1500 # maximum compliance
-            # <= 0
-            constr = x -> comp(filter(x)) - compliance_threshold 
-        else
-            error("Undefined task $(opt_task)")
-        end
+        comp = TopOpt.Compliance(problem, solver)
+        compliance_threshold = 1500 # maximum compliance
+        # <= 0
+        constr = x -> comp(filter(x)) - compliance_threshold 
     else
         error("Undefined task $(opt_task)")
     end
 
     Nonconvex.NonconvexCore.show_residuals[] = verbose
-    result_data["initial_obj"] = obj(x0)
 
     m = Model(obj)
     addvar!(m, zeros(nelem), ones(nelem))
     add_ineq_constraint!(m, constr)
 
-    if optimizer == "percival"
-        alg = AugLag()
-        options = AugLagOptions()
-    elseif optimizer == "mma"
+    if optimizer == "mma"
         alg = MMA87()
         options = MMAOptions(; maxiter=100, tol=Nonconvex.Tolerance(; kkt=0.001))
     elseif optimizer == "nlopt"
@@ -189,7 +169,10 @@ function optimize_domain(problem_name, opt_task; verbose=false, write=false, opt
             df_options = options
             df_convcriteria = convcriteria
 
+            st_time = time()
             df_result = optimize(m, df_alg, vcat(x0, 1.0), options = df_options, convcriteria = df_convcriteria)
+            runtime = time() - st_time
+
             printfmt("Minimum: {:.3f}; Constraint: {:.3f}; DF Constraint: {:.3f}; runtime {:.3f}\n", 
                 df_result.minimum, maximum(df_constr(df_result.minimizer)), 
                 maximum(deflation_constr(df_result.minimizer)), runtime)
@@ -200,18 +183,14 @@ function optimize_domain(problem_name, opt_task; verbose=false, write=false, opt
             fig2 = TopOpt.TopOptProblems.Visualization.visualize(problem, topology=df_result.minimizer[1:end-1], 
                 undeformed_mesh_color=(:black, 1.0))
             hidedecorations!(fig2.current_axis.x)
-            # var_fig = lines(df_result.minimizer)
 
             if write
                 result_data["deflate_$(iter)"] = Dict("minimizer" => df_result.minimizer, "minimum" => df_result.minimum, "runtime" => runtime, "distance_to_xstar" => final_dist)
                 save(joinpath(problem_result_dir, "deflate_r$(iter).png"), fig2)
-                save(joinpath(problem_result_dir, "deflate_r$(iter).pdf"), fig2, pt_per_unit = 1)
-                # save(joinpath(problem_result_dir, "$(problem_config)_x2.png"), var_fig)
+                # save(joinpath(problem_result_dir, "deflate_r$(iter).pdf"), fig2, pt_per_unit = 1)
             else
                 display(fig2)
                 wait_for_key("Enter to continue...")
-                # display(var_fig)
-                # wait_for_key("Check variable distribution...")
             end
             push!(solutions, df_result.minimizer[1:end-1])
         end # end deflation loop

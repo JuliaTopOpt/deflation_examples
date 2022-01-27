@@ -7,10 +7,8 @@ using JLD
 import Optim
 using TopOpt
 using TopOpt.TrussTopOptProblems.TrussVisualization: visualize
-using Arpack
 Nonconvex.@load Ipopt
 Nonconvex.@load NLopt
-# Nonconvex.@load Juniper
 
 include("problem_defs.jl")
 include("../utils.jl")
@@ -20,7 +18,6 @@ RESULT_DIR = joinpath(@__DIR__, "results");
 
 function optimize_truss(problem, opt_task; verbose=false, write=false, optimizer="mma", distance="l2",
     deflation_iters=5)
-    problem_config = "$(problem)_$(opt_task)_$(optimizer)_$distance"
     result_data = Dict()
     objs = Float64[]
 
@@ -53,54 +50,14 @@ function optimize_truss(problem, opt_task; verbose=false, write=false, optimizer
     penalty = TopOpt.PowerPenalty(p)
     solver = FEASolver(Direct, problem; xmin=xmin, penalty=penalty)
     solver()
-    # TopOpt.setpenalty!(solver, penalty.p)
-    ch = problem.ch
-    dh = problem.ch.dh
-
     comp = TopOpt.Compliance(problem, solver)
 
-    dp = TopOpt.Displacement(solver)
-    assemble_k = TopOpt.AssembleK(problem)
-    element_k = ElementK(solver)
-    truss_element_kσ = TrussElementKσ(problem, solver)
-
     # * comliance minimization objective
-    obj = comp
-    c = 1.0 # buckling load multiplier
-    ndofs = length(solver.u)
-    inds = setdiff(1:ndofs, ch.prescribed_dofs)
-
-    function buckling_matrix_constr(x)
-        # * Array(K + c*Kσ) ⋟ 0, PSD
-        # * solve for the displacement
-        u = dp(x)
-
-        # * x -> Kes, construct all the element stiffness matrices
-        # a list of small matrices for each element (cell)
-        Kes = element_k(x)
-
-        # * Kes -> K (global linear stiffness matrix)
-        K = assemble_k(Kes)
-        K = apply_boundary_with_meandiag!(K, ch)
-
-        # * u_e, x_e -> Ksigma_e
-        Kσs = truss_element_kσ(u, x)
-
-        # * Kσs -> Kσ
-        Kσ = assemble_k(Kσs)
-        Kσ = apply_boundary_with_zerodiag!(Kσ, ch)
-
-        Kg = Array(K + c * Kσ)
-
-        return Kg[inds, inds]
-    end
-
     if occursin("vol_constrained", opt_task) && occursin("min_compliance", opt_task)
         obj = comp
-        volfrac = TopOpt.Volume(problem, solver)
-        constr = x -> volfrac(x) - V
-        # constr = x -> sum(x) / length(x) - V
-
+        # volfrac = TopOpt.Volume(problem, solver)
+        # constr = x -> volfrac(x) - V
+        constr = x -> sum(x) / length(x) - V
     else
         error("Undefined task $(opt_task)")
     end
@@ -108,26 +65,12 @@ function optimize_truss(problem, opt_task; verbose=false, write=false, optimizer
     x0 = fill(1.0, length(solver.vars))
     nelem = length(x0)
     println("#elements : $nelem")
-    result_data["initial_obj"] = obj(x0)
-
-    # println(logdet(cholesky(buckling_matrix_constr(x0))))
-    Kg0 = buckling_matrix_constr(x0)
-    sparse_eigvals, buckmodes = eigs(Kg0, nev=1, which=:SR)
-    smallest_pos_eigval = sparse_eigvals[1]
-    println(smallest_pos_eigval)
 
     Nonconvex.NonconvexCore.show_residuals[] = verbose
 
     m = Model(obj)
-    if optimizer == "juniper"
-        error("Not fully developed.")
-        addvar!(m, zeros(nelem), ones(nelem); integer=trues(nelem))
-    else
-        addvar!(m, zeros(nelem), ones(nelem))
-    end
+    addvar!(m, zeros(nelem), ones(nelem))
     add_ineq_constraint!(m, constr)
-
-    sd_constr = Nonconvex.add_sd_constraint!(m, buckling_matrix_constr)
 
     if optimizer == "mma"
         alg = MMA02()
@@ -135,10 +78,6 @@ function optimize_truss(problem, opt_task; verbose=false, write=false, optimizer
             tol=Nonconvex.Tolerance(kkt=0.001),
             # dual_options=Optim.Options(iterations = 100)
             )
-    elseif optimizer == "juniper"
-        # https://lanl-ansi.github.io/Juniper.jl/stable/options/#Parallel
-        alg = JuniperIpoptAlg()
-        options = JuniperIpoptOptions(subsolver_options = IpoptOptions(max_iter=300))
     elseif optimizer == "nlopt"
         alg = NLoptAlg(:LD_MMA)
         options = NLoptOptions()
@@ -161,24 +100,17 @@ function optimize_truss(problem, opt_task; verbose=false, write=false, optimizer
 
     fig1 = visualize(problem, topology=r1.minimizer)
     hidedecorations!(fig1.current_axis.x)
-    # var_fig = lines(r1.minimizer)
     push!(objs, r1.minimum)
     if write
         result_data["init_solve"] = Dict("minimizer" => r1.minimizer, "minimum" => r1.minimum)
          #, "convstate" => r1.convstate)
         save(joinpath(problem_result_dir, "r1.png"), fig1)
-        # https://makie.juliaplots.org/stable/documentation/figure_size/#vector_graphics
-        save(joinpath(problem_result_dir, "r1.pdf"), fig1, pt_per_unit = 1)
-        # save(joinpath(problem_result_dir, "x1.png"), var_fig)
+        # # https://makie.juliaplots.org/stable/documentation/figure_size/#vector_graphics
+        # save(joinpath(problem_result_dir, "r1.pdf"), fig1, pt_per_unit = 1)
     else
         display(fig1)
         wait_for_key("Enter to continue...")
-        # display(var_fig)
-        # wait_for_key("Check variable distribution...")
     end
-
-    # println(logdet(cholesky(buckling_matrix_constr(x0))))
-    Kg = buckling_matrix_constr(r1.minimizer)
 
     if endswith(opt_task, "deflation")
         shift = 1.0
@@ -238,18 +170,14 @@ function optimize_truss(problem, opt_task; verbose=false, write=false, optimizer
             push!(objs, df_result.minimum)
             fig2 = visualize(problem, topology=df_result.minimizer[1:end-1])
             hidedecorations!(fig2.current_axis.x)
-            # var_fig = lines(df_result.minimizer[1:end-1])
 
             if write
                 result_data["deflate_$(iter)"] = Dict("minimizer" => df_result.minimizer, "minimum" => df_result.minimum) #, "convstate" => r1.convstate)
                 save(joinpath(problem_result_dir, "deflate_r$(iter).png"), fig2)
-                save(joinpath(problem_result_dir, "deflate_r$(iter).pdf"), fig2, pt_per_unit = 1)
-                # save(joinpath(problem_result_dir, "_deflate_x$(iter).png"), var_fig)
+                # save(joinpath(problem_result_dir, "deflate_r$(iter).pdf"), fig2, pt_per_unit = 1)
             else
                 display(fig2)
                 wait_for_key("Enter to continue...")
-                # display(var_fig)
-                # wait_for_key("Check variable distribution...")
             end
 
             push!(solutions, df_result.minimizer[1:end-1])
@@ -261,7 +189,7 @@ function optimize_truss(problem, opt_task; verbose=false, write=false, optimizer
             ax.xlabel = "deflation iterations"
             ax.ylabel = "objectives"
             lines!(ax, 0:1:length(objs)-1, objs)
-            save(joinpath(problem_result_dir, "_obj_history.pdf"), obj_fig)
+            # save(joinpath(problem_result_dir, "_obj_history.pdf"), obj_fig)
             save(joinpath(problem_result_dir, "_obj_history.png"), obj_fig)
         end
     end
@@ -289,7 +217,7 @@ function parse_commandline()
         "--optimizer"
             help = "optimizer choice"
             arg_type = String
-            default = "mma" # nlopt, juniper, ipopt
+            default = "nlopt" # mma, nlopt, ipopt
         "--distance"
             help = "distance measure choice"
             arg_type = String
@@ -317,7 +245,6 @@ function main()
     println(parsed_args)
     println("="^10)
 
-    # TODO try https://juliadynamics.github.io/DrWatson.jl/dev/real_world/
     optimize_truss(parsed_args["problem"], parsed_args["task"], verbose=parsed_args["verbose"],
         write=parsed_args["write"], optimizer=parsed_args["optimizer"], distance=parsed_args["distance"],
         deflation_iters=parsed_args["deflate_iters"])
