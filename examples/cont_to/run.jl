@@ -16,7 +16,7 @@ include("../utils.jl")
 using Nonconvex
 Nonconvex.@load Ipopt
 Nonconvex.@load NLopt
-Nonconvex.@load Percival
+# Nonconvex.@load Percival
 
 RESULT_DIR = joinpath(@__DIR__, "results");
 
