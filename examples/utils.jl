@@ -8,7 +8,8 @@ wait_for_key(prompt) = (print(stdout, prompt); read(stdin, 1); nothing)
 
 function replot_problem_results(problem, problem_result_dir)
     println("Loading data from $problem_result_dir")
-    result_data = load(joinpath(problem_result_dir, "data.jld"))["result_data"]
+    jlddata = load(joinpath(problem_result_dir, "data.jld"))
+    result_data = jlddata["result_data"]
     objs = Float64[]
 
     r1_x = result_data["init_solve"]["minimizer"]
@@ -19,7 +20,7 @@ function replot_problem_results(problem, problem_result_dir)
     push!(objs, result_data["init_solve"]["minimum"] )
 
     for k in keys(result_data)
-        if !occursin("deflate", k)
+        if !occursin("iter", k)
             continue
         end
         df_result_minimizer = result_data[k]["minimizer"]
@@ -32,7 +33,7 @@ function replot_problem_results(problem, problem_result_dir)
         save(joinpath(problem_result_dir, "$(k)_replot.pdf"), fig2, pt_per_unit = 1)
     end
 
-    objs ./= minimum(objs)
+    objs ./= objs[1]
     obj_fig = Figure(resolution=(800,800), font="Arial")
     ax = Axis(obj_fig[1,1])
     # ax.xlabel = "deflation iterations"
@@ -47,7 +48,7 @@ function plot_runtime(problem_result_dir)
     runtimes = Float64[]
     push!(runtimes, result_data["init_solve"]["runtime"] )
     for k in keys(result_data)
-        if !occursin("deflate", k)
+        if !occursin("iter", k)
             continue
         end
         push!(runtimes, result_data[k]["runtime"])
@@ -57,5 +58,5 @@ function plot_runtime(problem_result_dir)
     ax = Axis(obj_fig[1,1])
     lines!(ax, 0:1:length(runtimes)-1, runtimes)
     save(joinpath(problem_result_dir, "_runtimes.png"), obj_fig)
-    println("Initial runtime $(runtimes[1]), avr deflated runtime $(sum(runtimes[2:end])/(length(runtimes)-1))")
+    println("Initial runtime $(runtimes[1]), avr iter runtime $(sum(runtimes[2:end])/(length(runtimes)-1))")
 end

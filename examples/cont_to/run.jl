@@ -119,7 +119,7 @@ function optimize_domain(problem_name, opt_task; verbose=false, write=false, opt
         wait_for_key("Enter to continue...")
     end
 
-    if endswith(opt_task, "deflation")
+    if endswith(opt_task, "deflation") || endswith(opt_task, "random_restart")
         power = 4.0
         radius = 30.0
         y_upperbound = 1e2
@@ -136,63 +136,87 @@ function optimize_domain(problem_name, opt_task; verbose=false, write=false, opt
         for iter in 1:deflation_iters
             println("-"^10)
             println("Iter - $iter")
-            function deflation_constr(X::Vector)
-                d = zero(eltype(X))
-                for sol in solutions
-                    d += max(dist_fn(X[1:end-1], sol) - radius, 0)^(-power)
-                    # d += dist_fn(X[1:end-1], sol)^(-power) + shift
-                end
-                println("d = $d, y = $(X[end])")
-                return d - X[end]
-            end
-
-            # * remake problem because dim changes by 1
-            df_obj = x -> obj(x[1:end-1])
-            df_constr = x -> constr(x[1:end-1])
-
-            m = Model(df_obj)
-            addvar!(m, zeros(nelem), ones(nelem); integer=trues(nelem))
-            # * deflation slack variable y
-            addvar!(m, [0], [y_upperbound])
-            add_ineq_constraint!(m, df_constr)
-            add_ineq_constraint!(m, deflation_constr)
-
-            df_alg = alg
-            df_options = options
-            df_convcriteria = convcriteria
 
             st_time = time()
-            df_result = optimize(m, df_alg, vcat(x0, 1.0), options = df_options, convcriteria = df_convcriteria)
-            runtime = time() - st_time
+            if endswith(opt_task, "deflation")
+                function deflation_constr(X::Vector)
+                    d = zero(eltype(X))
+                    for sol in solutions
+                        d += max(dist_fn(X[1:end-1], sol) - radius, 0)^(-power)
+                        # d += dist_fn(X[1:end-1], sol)^(-power) + shift
+                    end
+                    println("d = $d, y = $(X[end])")
+                    return d - X[end]
+                end
 
-            printfmt("Minimum: {:.3f}; Constraint: {:.3f}; DF Constraint: {:.3f}; runtime {:.3f}\n", 
-                df_result.minimum, maximum(df_constr(df_result.minimizer)), 
-                maximum(deflation_constr(df_result.minimizer)), runtime)
-            final_dist = dist_fn(r1.minimizer, df_result.minimizer[1:end-1])
-            println("Distance: $(final_dist)")
-            push!(objs, df_result.minimum)
+                # * remake problem because dim changes by 1
+                df_obj = x -> obj(x[1:end-1])
+                df_constr = x -> constr(x[1:end-1])
 
-            fig2 = TopOpt.TopOptProblems.Visualization.visualize(problem, topology=df_result.minimizer[1:end-1], 
+                m = Model(df_obj)
+                addvar!(m, zeros(nelem), ones(nelem); integer=trues(nelem))
+                # * deflation slack variable y
+                addvar!(m, [0], [y_upperbound])
+                add_ineq_constraint!(m, df_constr)
+                add_ineq_constraint!(m, deflation_constr)
+
+                df_alg = alg
+                df_options = options
+                df_convcriteria = convcriteria
+
+                # * start from the same initial solution!
+                df_result = optimize(m, df_alg, vcat(x0, 1.0), options = df_options, convcriteria = df_convcriteria)
+                new_topology = df_result.minimizer[1:end-1]
+                new_minimum = df_result.minimum
+                final_dist = dist_fn(r1.minimizer, df_result.minimizer[1:end-1])
+
+                runtime = time() - st_time
+                printfmt("Minimum: {:.3f}; Constraint: {:.3f}; DF Constraint: {:.3f}; runtime {:.3f}\n", 
+                    df_result.minimum, maximum(df_constr(df_result.minimizer)), 
+                    maximum(deflation_constr(df_result.minimizer)), runtime)
+                println("Distance: $(final_dist)")
+                data_to_store = Dict("minimizer" => df_result.minimizer, "minimum" => df_result.minimum, "runtime" => runtime, 
+                    "distance_to_xstar" => final_dist)
+            elseif endswith(opt_task, "random_restart")
+                rs_x0 = rand(eltype(V), length(solver.vars))
+                rs_result = Nonconvex.optimize(m, alg, rs_x0; options=options, convcriteria = convcriteria)
+                runtime = time() - st_time
+                printfmt("Minimum: {:.3f}; Constraint: {:.3f}; runtime {:.3f}\n", rs_result.minimum, 
+                    maximum(constr(rs_result.minimizer)), runtime)
+
+                new_topology = rs_result.minimizer
+                new_minimum = rs_result.minimum
+                final_dist = dist_fn(r1.minimizer, rs_result.minimizer)
+
+                data_to_store = Dict("minimizer" => rs_result.minimizer, "minimum" => rs_result.minimum, "runtime" => runtime, 
+                    "distance_to_xstar" => final_dist)
+            else
+                error("unknown task $(opt_task)")
+            end
+
+            push!(objs, new_minimum)
+            push!(solutions, new_topology)
+
+            fig2 = TopOpt.TopOptProblems.Visualization.visualize(problem, topology=new_topology, 
                 undeformed_mesh_color=(:black, 1.0))
             hidedecorations!(fig2.current_axis.x)
 
             if write
-                result_data["deflate_$(iter)"] = Dict("minimizer" => df_result.minimizer, "minimum" => df_result.minimum, "runtime" => runtime, "distance_to_xstar" => final_dist)
-                save(joinpath(problem_result_dir, "deflate_r$(iter).png"), fig2)
+                result_data["iter_$(iter)"] = data_to_store
+                save(joinpath(problem_result_dir, "iter_r$(iter).png"), fig2)
                 # save(joinpath(problem_result_dir, "deflate_r$(iter).pdf"), fig2, pt_per_unit = 1)
             else
                 display(fig2)
                 wait_for_key("Enter to continue...")
             end
-            push!(solutions, df_result.minimizer[1:end-1])
-        end # end deflation loop
+        end # end deflation/random_restart loop
 
         if write
             obj_fig = Figure(resolution=(800,800), font="Arial")
             ax = Axis(obj_fig[1,1])
-            ax.xlabel = "deflation iterations"
+            ax.xlabel = "iterations"
             ax.ylabel = "objectives"
-            lines!(ax, 0:1:length(objs)-1, objs)
+            lines!(ax, 0:1:length(objs)-1, objs/objs[1])
             # save(joinpath(problem_result_dir, "_obj_history.pdf"), obj_fig)
             save(joinpath(problem_result_dir, "_obj_history.png"), obj_fig)
         end

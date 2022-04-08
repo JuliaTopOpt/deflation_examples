@@ -883,6 +883,12 @@ git-tree-sha1 = "f6250b16881adf048549549fba48b1161acdac8c"
 uuid = "c1c5ebd0-6772-5130-a774-d5fcae4a789d"
 version = "3.100.1+0"
 
+[[deps.LERC_jll]]
+deps = ["Artifacts", "JLLWrappers", "Libdl", "Pkg"]
+git-tree-sha1 = "bf36f528eec6634efc60d7ec062008f171071434"
+uuid = "88015f11-f218-50d7-93a8-a6af411a945d"
+version = "3.0.0+1"
+
 [[deps.LLVM]]
 deps = ["CEnum", "LLVMExtra_jll", "Libdl", "Printf", "Unicode"]
 git-tree-sha1 = "f8dcd7adfda0dddaf944e62476d823164cccc217"
@@ -891,9 +897,9 @@ version = "4.7.1"
 
 [[deps.LLVMExtra_jll]]
 deps = ["Artifacts", "JLLWrappers", "Libdl", "Pkg"]
-git-tree-sha1 = "62115afed394c016c2d3096c5b85c407b48be96b"
+git-tree-sha1 = "67cc5406b15bd04ff72a45f628bec61d36078908"
 uuid = "dad2f222-ce93-54a1-a47d-0025e8a3acab"
-version = "0.0.13+1"
+version = "0.0.13+3"
 
 [[deps.LZO_jll]]
 deps = ["Artifacts", "JLLWrappers", "Libdl", "Pkg"]
@@ -972,10 +978,10 @@ uuid = "4b2f31a3-9ecc-558c-b454-b3730dcb73e9"
 version = "2.35.0+0"
 
 [[deps.Libtiff_jll]]
-deps = ["Artifacts", "JLLWrappers", "JpegTurbo_jll", "Libdl", "Pkg", "Zlib_jll", "Zstd_jll"]
-git-tree-sha1 = "340e257aada13f95f98ee352d316c3bed37c8ab9"
+deps = ["Artifacts", "JLLWrappers", "JpegTurbo_jll", "LERC_jll", "Libdl", "Pkg", "Zlib_jll", "Zstd_jll"]
+git-tree-sha1 = "c9551dd26e31ab17b86cbd00c2ede019c08758eb"
 uuid = "89763e89-9b03-5906-acba-b20f662cd828"
-version = "4.3.0+0"
+version = "4.3.0+1"
 
 [[deps.Libuuid_jll]]
 deps = ["Artifacts", "JLLWrappers", "Libdl", "Pkg"]
@@ -1826,8 +1832,8 @@ uuid = "a759f4b9-e2f1-59dc-863e-4aeb61b1ea8f"
 version = "0.5.15"
 
 [[deps.TopOpt]]
-deps = ["ChainRulesCore", "Distributions", "Einsum", "Ferrite", "FileIO", "Flux", "ForwardDiff", "GeometryBasics", "GeometryTypes", "IterativeSolvers", "JSON", "LinearAlgebra", "MacroTools", "MappedArrays", "NearestNeighbors", "Nonconvex", "NonconvexMMA", "NonconvexPercival", "NonconvexSemidefinite", "Parameters", "Pkg", "Preconditioners", "Random", "Reexport", "Requires", "Revise", "Setfield", "SparseArrays", "StaticArrays", "Statistics", "StatsFuns", "Tensors", "Test", "TimerOutputs", "VTKDataTypes", "WriteVTK", "Zygote"]
-git-tree-sha1 = "d8b9543627e4fe3d9cde2d4835a3f15e5dbddec0"
+deps = ["ChainRulesCore", "ColorSchemes", "Distributions", "Einsum", "Ferrite", "FileIO", "Flux", "ForwardDiff", "GeometryBasics", "GeometryTypes", "IterativeSolvers", "JSON", "LinearAlgebra", "MacroTools", "MappedArrays", "NearestNeighbors", "Nonconvex", "NonconvexMMA", "NonconvexPercival", "NonconvexSemidefinite", "Parameters", "Pkg", "Preconditioners", "Random", "Reexport", "Requires", "Revise", "Setfield", "SparseArrays", "StaticArrays", "Statistics", "StatsFuns", "Tensors", "Test", "TimerOutputs", "VTKDataTypes", "WriteVTK", "Zygote"]
+path = "../TopOpt.jl"
 uuid = "53a1e1a5-51bb-58a9-8a02-02056cc81109"
 version = "0.5.2"
 
