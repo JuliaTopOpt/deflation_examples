@@ -2,6 +2,7 @@ using GLMakie
 # using CairoMakie
 GLMakie.activate!()
 using Makie
+using UnPack
 using JLD
 using Formatting
 
@@ -9,16 +10,20 @@ using TopOpt
 using TopOpt.TopOptProblems.Visualization: visualize
 using LinearAlgebra, StatsFuns
 
-include("../utils.jl")
+include("utils.jl")
 
 using Nonconvex
 Nonconvex.@load Ipopt
 Nonconvex.@load NLopt
 
-RESULT_DIR = joinpath(@__DIR__, "results");
+# RESULT_DIR = joinpath(@__DIR__, "results");
 
-function optimize_domain(problem_name, opt_task; verbose=false, write=false, optimizer="nlopt", distance="l2",
-    deflation_iters=5, replot=false)
+function optimize_domain(args)
+    # problem_name, opt_task; verbose=false, write=false, optimizer="nlopt", distance="l2",
+    # deflation_iters=5, replot
+    # deflation_iters=5, replot=false)
+    @unpack problem_name, opt_task, verbose, write, optimizer, distance, deflation_iters, replot = args
+
     result_data = Dict()
     objs = Float64[]
 
@@ -32,7 +37,8 @@ function optimize_domain(problem_name, opt_task; verbose=false, write=false, opt
         "half_mbb_beam" => HalfMBB(Val{:Linear}, (60*size_ratio, 20*size_ratio), (1.0, 1.0), E, v, f),
     )
     problem = problems[problem_name]
-    problem_config = "$(problem_name)_$(opt_task)_$(optimizer)_$distance"
+    problem_config = @ntuple problem_name opt_task optimizer distance
+    # "$(problem_name)_$(opt_task)_$(optimizer)_$distance"
 
     problem_result_dir = joinpath(RESULT_DIR, problem_config)
     if !ispath(problem_result_dir)
@@ -226,56 +232,3 @@ function optimize_domain(problem_name, opt_task; verbose=false, write=false, opt
         save(joinpath(problem_result_dir, "data.jld"), "result_data", result_data)
     end
 end
-
-#########################################
-
-using ArgParse
-
-function parse_commandline()
-    s = ArgParseSettings()
-    @add_arg_table! s begin
-        "--problem"
-            help = "problem to run"
-            arg_type = String
-            default = "half_mbb_beam"
-        "--task"
-            help = "problem formulation"
-            arg_type = String
-            default = "min_compliance_vol_constrained_deflation" # "min_vol_stress_constrained_deflation"
-        "--optimizer"
-            help = "optimizer choice"
-            arg_type = String
-            default = "nlopt" # mma
-        "--distance"
-            help = "distance measure choice"
-            arg_type = String
-            default = "l2" # kl, w2
-        "--deflate_iters"
-            help = "print extra info."
-            arg_type = Int
-            default = 5
-        "--verbose"
-            help = "print extra info."
-            action = :store_true
-        "--write"
-            help = "export result."
-            action = :store_true
-        "--replot"
-            help = "parse and replot saved results."
-            action = :store_true
-    end
-    return parse_args(s)
-end
-
-function main()
-    parsed_args = parse_commandline()
-    println("Parsed args:")
-    println(parsed_args)
-    println("="^10)
-
-    optimize_domain(parsed_args["problem"], parsed_args["task"], verbose=parsed_args["verbose"],
-        write=parsed_args["write"], optimizer=parsed_args["optimizer"], distance=parsed_args["distance"],
-        deflation_iters=parsed_args["deflate_iters"], replot=parsed_args["replot"])
-end
-
-main()

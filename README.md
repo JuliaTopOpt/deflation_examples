@@ -20,12 +20,12 @@ using Runner
 
 ```julia
 using Runner
-@runit "examples/truss_to/run.jl --problem dense_graph --task min_compliance_vol_constrained_deflation --optimizer nlopt --deflate_iters 5"
+@runit "examples/truss_to/run.jl --problem_name dense_graph --opt_task min_compliance_vol_constrained_deflation --optimizer nlopt --deflation_iters 5"
 ```
 
 ## Continuum TopOpt examples
 
 ```julia
 using Runner
-@runit "examples\\cont_to\\run.jl --task min_compliance_vol_constrained_deflation --optimizer nlopt --deflate_iters 5"
+@runit "examples\\cont_to\\run.jl --opt_task min_compliance_vol_constrained_deflation --optimizer nlopt --deflation_iters 5"
 ```
