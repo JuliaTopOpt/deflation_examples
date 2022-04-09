@@ -19,31 +19,33 @@ Nonconvex.@load NLopt
 # RESULT_DIR = joinpath(@__DIR__, "results");
 
 function optimize_domain(args)
-    # problem_name, opt_task; verbose=false, write=false, optimizer="nlopt", distance="l2",
-    # deflation_iters=5, replot
-    # deflation_iters=5, replot=false)
-    @unpack problem_name, opt_task, verbose, write, optimizer, distance, deflation_iters, replot = args
-
-    result_data = Dict()
+    @unpack problem_name, opt_task, mso_type, optimizer, size_ratio = args
+    @unpack distance, deflation_iters, power, radius = args
+    @unpack verbose, replot, problem_result_dir = args
+    result_data = copy(args)
     objs = Float64[]
+    sol_distances = Float64[]
+    runtimes = Float64[]
 
+    # * TopOpt parameters
     E = 1.0 # Young’s modulus
     v = 0.3 # Poisson’s ratio
     f = 1.0 # downward force
     rmin = 4.0
-    size_ratio = 2
+    V = 0.5 # volume fraction
+    xmin = 0.0001 # minimum density
+    penalty_val = 4.0
+
+    # * deflation algorithm parameters
+    # power = 4.0
+    # radius = 30.0
+    y_upperbound = 1e2
+
     problems = Dict(
         "cantilever_beam" => PointLoadCantilever(Val{:Linear}, (80*size_ratio, 20*size_ratio), (1.0, 1.0), E, v, f),
         "half_mbb_beam" => HalfMBB(Val{:Linear}, (60*size_ratio, 20*size_ratio), (1.0, 1.0), E, v, f),
     )
     problem = problems[problem_name]
-    problem_config = @ntuple problem_name opt_task optimizer distance
-    # "$(problem_name)_$(opt_task)_$(optimizer)_$distance"
-
-    problem_result_dir = joinpath(RESULT_DIR, problem_config)
-    if !ispath(problem_result_dir)
-        mkdir(problem_result_dir)
-    end
 
     if replot
         replot_problem_results(problem, problem_result_dir)
@@ -51,9 +53,6 @@ function optimize_domain(args)
         return
     end
 
-    V = 0.5 # volume fraction
-    xmin = 0.0001 # minimum density
-    penalty_val = 4.0
     penalty = TopOpt.PowerPenalty(penalty_val)
     solver = FEASolver(Direct, problem; xmin=xmin, penalty=penalty)
     TopOpt.setpenalty!(solver, penalty.p)
@@ -115,20 +114,13 @@ function optimize_domain(args)
     fig1 = TopOpt.TopOptProblems.Visualization.visualize(problem, topology=r1.minimizer, undeformed_mesh_color=(:black, 1.0))
     hidedecorations!(fig1.current_axis.x)
     push!(objs, r1.minimum)
+    push!(sol_distances, 0.0)
+    push!(runtimes, runtime)
  
-    if write
-        result_data["init_solve"] = Dict("minimizer" => r1.minimizer, "minimum" => r1.minimum, "runtime" => runtime)
-        save(joinpath(problem_result_dir, "r1.png"), fig1)
-        # save(joinpath(problem_result_dir, "r1.pdf"), fig1, pt_per_unit = 1)
-    else
-        display(fig1)
-        wait_for_key("Enter to continue...")
-    end
-
-    if endswith(opt_task, "deflation") || endswith(opt_task, "random_restart")
-        power = 4.0
-        radius = 30.0
-        y_upperbound = 1e2
+    result_data["init_solve"] = Dict("minimizer" => r1.minimizer, "minimum" => r1.minimum, "runtime" => runtime)
+    safesave(joinpath(problem_result_dir, "r1.png"), fig1)
+    
+    if mso_type == "deflation" || mso_type == "random_restart"
         result_data["deflation_config"] = Dict("power" => power, "radius" => radius, "dist" => distance,
             "y_upperbound" => y_upperbound)
 
@@ -144,14 +136,14 @@ function optimize_domain(args)
             println("Iter - $iter")
 
             st_time = time()
-            if endswith(opt_task, "deflation")
+            if mso_type == "deflation"
                 function deflation_constr(X::Vector)
                     d = zero(eltype(X))
                     for sol in solutions
                         d += max(dist_fn(X[1:end-1], sol) - radius, 0)^(-power)
                         # d += dist_fn(X[1:end-1], sol)^(-power) + shift
                     end
-                    println("d = $d, y = $(X[end])")
+                    # println("d = $d, y = $(X[end])")
                     return d - X[end]
                 end
 
@@ -183,7 +175,7 @@ function optimize_domain(args)
                 println("Distance: $(final_dist)")
                 data_to_store = Dict("minimizer" => df_result.minimizer, "minimum" => df_result.minimum, "runtime" => runtime, 
                     "distance_to_xstar" => final_dist)
-            elseif endswith(opt_task, "random_restart")
+            elseif mso_type == "random_restart"
                 rs_x0 = rand(eltype(V), length(solver.vars))
                 rs_result = Nonconvex.optimize(m, alg, rs_x0; options=options, convcriteria = convcriteria)
                 runtime = time() - st_time
@@ -200,35 +192,47 @@ function optimize_domain(args)
                 error("unknown task $(opt_task)")
             end
 
-            push!(objs, new_minimum)
             push!(solutions, new_topology)
+            push!(objs, new_minimum)
+            push!(sol_distances, final_dist)
+            push!(runtimes, runtime)
 
             fig2 = TopOpt.TopOptProblems.Visualization.visualize(problem, topology=new_topology, 
                 undeformed_mesh_color=(:black, 1.0))
             hidedecorations!(fig2.current_axis.x)
 
-            if write
-                result_data["iter_$(iter)"] = data_to_store
-                save(joinpath(problem_result_dir, "iter_r$(iter).png"), fig2)
-                # save(joinpath(problem_result_dir, "deflate_r$(iter).pdf"), fig2, pt_per_unit = 1)
-            else
-                display(fig2)
-                wait_for_key("Enter to continue...")
-            end
+            result_data["iter_$(iter)"] = data_to_store
+            safesave(joinpath(problem_result_dir, "iter_r$(iter).png"), fig2)
         end # end deflation/random_restart loop
 
-        if write
-            obj_fig = Figure(resolution=(800,800), font="Arial")
-            ax = Axis(obj_fig[1,1])
-            ax.xlabel = "iterations"
-            ax.ylabel = "objectives"
-            lines!(ax, 0:1:length(objs)-1, objs/objs[1])
-            # save(joinpath(problem_result_dir, "_obj_history.pdf"), obj_fig)
-            save(joinpath(problem_result_dir, "_obj_history.png"), obj_fig)
-        end
+        obj_fig = Figure(resolution=(800,800), font="Arial")
+        ax = Axis(obj_fig[1,1])
+        ax.xlabel = "iterations"
+        ax.ylabel = "rel objectives"
+        # ! save relative objective to the initial solve
+        lines!(ax, 0:1:length(objs)-1, objs/objs[1])
+        safesave(joinpath(problem_result_dir, "_obj_history.png"), obj_fig)
+
+        obj_fig = Figure(resolution=(800,800), font="Arial")
+        ax = Axis(obj_fig[1,1])
+        ax.xlabel = "iterations"
+        ax.ylabel = "sol distances"
+        # ! save relative objective to the initial solve
+        lines!(ax, 0:1:length(sol_distances)-1, sol_distances)
+        safesave(joinpath(problem_result_dir, "_sol_distance.png"), obj_fig)
+
+        obj_fig = Figure(resolution=(800,800), font="Arial")
+        ax = Axis(obj_fig[1,1])
+        ax.xlabel = "iterations"
+        ax.ylabel = "rel runtimes"
+        # ! save relative objective to the initial solve
+        lines!(ax, 0:1:length(runtimes)-1, runtimes)
+        safesave(joinpath(problem_result_dir, "_runtimes.png"), obj_fig)
     end
 
-    if write
-        save(joinpath(problem_result_dir, "data.jld"), "result_data", result_data)
-    end
+    result_data["relative_objective_history"] = objs/objs[1]
+    result_data["distance_to_initial_solution"] = sol_distances
+    result_data["relative_runtimes"] = runtimes/runtimes[1]
+    safesave(joinpath(problem_result_dir, "data.jld"), result_data)
+    return result_data
 end
