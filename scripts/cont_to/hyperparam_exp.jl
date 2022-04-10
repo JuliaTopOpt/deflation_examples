@@ -11,9 +11,9 @@ general_args = Dict(
     "mso_type"        => "deflation",
     "optimizer"       => "nlopt", 
     "distance"        => "l2",
-    "deflation_iters" => 20, 
-    "power"           => Array(1:1:10), 
-    "radius"          => Array(0:5:30), 
+    "deflation_iters" => 10, 
+    "power"           => Array(1.0:1:6.), 
+    "radius"          => Array(1.0:5:32), 
     "size_ratio"      => 2, 
     "verbose"         => false, 
     "replot"          => false,
@@ -31,5 +31,5 @@ for (i, args) in enumerate(arg_dicts)
 
     result_data =  optimize_domain(args)
     safesave(datadir("cont_to", "hyperparam_tests", savename(problem_config, "jld2")), result_data)
-    ProgressMeter.next!(prog)
+    ProgressMeter.next!(pbar)
 end
