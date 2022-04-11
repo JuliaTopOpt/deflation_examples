@@ -1,4 +1,4 @@
-using Revise, Distributions, StatsFuns, Plots, ProgressMeter, AdvancedVI, ForwardDiff, DiffResults, LinearAlgebra, Random, Flux, StableRNGs, Zygote, ChainRulesCore, JLD
+using Revise, Distributions, StatsFuns, Plots, ProgressMeter, AdvancedVI, ForwardDiff, DiffResults, LinearAlgebra, Random, Flux, Zygote, ChainRulesCore, JLD
 
 function mixturef(means, stds = ones(length(means)))
     return MixtureModel(Normal.(means, stds))
