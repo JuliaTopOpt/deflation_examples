@@ -43,11 +43,11 @@ function replot_problem_results(problem, problem_result_dir)
         save(joinpath(problem_result_dir, "$(k)_replot.pdf"), fig2, pt_per_unit = 1)
     end
 
-    objs ./= objs[1]
     obj_fig = Figure(resolution=(800,800), font="Arial")
     ax = Axis(obj_fig[1,1])
     # ax.xlabel = "deflation iterations"
     # ax.ylabel = "objectives"
+    objs ./= objs[1]
     lines!(ax, 0:1:length(objs)-1, objs)
     save(joinpath(problem_result_dir, "_obj_history_replot.pdf"), obj_fig)
 end

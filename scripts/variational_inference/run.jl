@@ -8,8 +8,7 @@ seed = 123
 rng = StableRNG(seed)
 Random.seed!(rng, seed)
 mean_amp = 30
-# mean_dim = 20
-mean_dim = 5
+mean_dim = 20
 means = mean_amp * randn(rng, mean_dim)
 initθ = [0.0, 5.0, 6.0]
 power = 3.0

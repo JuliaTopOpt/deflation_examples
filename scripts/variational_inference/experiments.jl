@@ -9,7 +9,7 @@ include(srcdir("var_inf.jl"))
 general_args = Dict(
     "seed"     => 123,
     "mean_amp" => 30,
-    "mean_dim" => Array(4:1:10),
+    "mean_dim" => Array(20:1:25),
     "nsamples" => 10,
     "niters"   => 10000,
     "power"    => 3.0,
