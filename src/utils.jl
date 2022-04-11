@@ -1,6 +1,7 @@
 import DrWatson
 using GLMakie
 GLMakie.activate!()
+import Plots
 using Makie
 using JLD
 ##############################
@@ -9,6 +10,10 @@ wait_for_key(prompt) = (print(stdout, prompt); read(stdin, 1); nothing)
 
 function DrWatson._wsave(filename, fig::Makie.Figure)
     Makie.save(filename, fig)
+end
+
+function DrWatson._wsave(filename, plot::Plots.Plot)
+    Plots.savefig(plot, filename)
 end
 
 function replot_problem_results(problem, problem_result_dir)

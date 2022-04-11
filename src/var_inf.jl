@@ -17,7 +17,7 @@ getq(θ) = MvNormal([θ[1]], Diagonal([exp(θ[2])]))
 function stochastic_vi(means, initθ, rng; power = 3.0, shift = 0.0, nsamples = 5, niters = 10000, max_barrier_multiple = 1000, quad_multiple = 0.01, nsolves = length(means), radius = 0.0, verbose=false)
     mixture = mixturef(means)
     logπ = x -> logpdf(mixture, x[1])
-    Plots.plot(logπ, minimum(means) - 5, maximum(means) + 5, label = "target")
+    # Plots.plot(logπ, minimum(means) - 5, maximum(means) + 5, label = "target")
     variational_objective = AdvancedVI.ELBO()
 
     diff_results = DiffResults.GradientResult(initθ)
@@ -40,17 +40,18 @@ function stochastic_vi(means, initθ, rng; power = 3.0, shift = 0.0, nsamples = 
     chunk_size = length(initθ)
     solutions = []
     runtimes = []
-    for _ in 1:nsolves
+    for deflate_iter in 1:nsolves
         st_time = time()
         θ = copy(initθ) #[0.1 * randn(); 1.0; 1.0]
         optimizer = AdvancedVI.DecayedADAGrad()
         step = 1
-        prog = ProgressMeter.Progress(alg.max_iters, 1)
+        prog = ProgressMeter.Progress(alg.max_iters, 1, "deflation iter#$(deflate_iter): inner SGD iters")
         while (step ≤ alg.max_iters)
             if verbose
                 @info "θ = $θ"
             end
 
+            # decaying coefficient approaching 0
             multiple = max(step / alg.max_iters * max_barrier_multiple, 1)
             if verbose
                 @info "multiple = $multiple"
@@ -95,16 +96,17 @@ function stochastic_vi(means, initθ, rng; power = 3.0, shift = 0.0, nsamples = 
     dists = getq.(solutions)
 
     # PDF plots
-    plt = Plots.plot(x -> exp(logπ(x)), minimum(means) - 5, maximum(means) + 5, legend = true, label = "target pdf")
+    plt = Plots.plot(x -> exp(logπ(x)), minimum(means) - 5, maximum(means) + 5, 
+        linestyle=:solid, linewidth = 4, linecolor = :black,
+        legend = true, label = "target pdf", grid=false)
     map(enumerate(dists)) do (i, dist)
-        Plots.plot!(plt, x -> exp(logpdf(dist, [x])), minimum(means) - 5, maximum(means) + 5, label = "approx pdf $i")
-        display(plt)
+        Plots.plot!(plt, x -> exp(logpdf(dist, [x])), minimum(means) - 5, maximum(means) + 5, 
+            label = "approx pdf $i", linewidth = 1)
     end
 
     # Minimization objective values
     vals = map(dists) do dist
         -variational_objective(rng, alg, dist, logπ, 1000)
     end
-    return vals, runtimes
+    return vals, runtimes, plt
 end
-
