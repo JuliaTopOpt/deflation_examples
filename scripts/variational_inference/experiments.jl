@@ -22,7 +22,7 @@ arg_dicts = dict_list(general_args)
 
 pbar = Progress(length(arg_dicts), 1, "VI multi-instance experiments...")
 for (i, args) in enumerate(arg_dicts)
-    local @unpack seed, mean_amp, mean_dim, nsamples, niters, power, radius, initθ = args
+    @unpack seed, mean_amp, mean_dim, nsamples, niters, power, radius, initθ = args
     println(args)
 
     rng = StableRNG(seed)
