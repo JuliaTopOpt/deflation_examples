@@ -1862,7 +1862,9 @@ version = "2.7.2"
 
 [[deps.Pathfinder]]
 deps = ["ChainRulesCore", "Distributions", "LinearAlgebra", "Nonconvex", "NonconvexCore", "NonconvexIpopt", "Optim", "PDMats", "PSIS", "Random", "Statistics", "StatsBase", "StatsFuns"]
-path = "/Users/mohamedtarek/.julia/dev/Pathfinder"
+git-tree-sha1 = "e16ccfab8d57e1e97290975ae2dc825497c4ca6e"
+repo-rev = "main"
+repo-url = "https://github.com/mohamed82008/Pathfinder.jl"
 uuid = "b1d3bc72-d0e7-4279-b92f-7fa5d6d2d454"
 version = "0.2.3"
 
